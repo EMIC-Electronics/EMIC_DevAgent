@@ -11,12 +11,14 @@ namespace EMIC_DevAgent.Core.Agents;
 public class OrchestratorAgent : AgentBase
 {
     private readonly ILlmService _llmService;
+    private readonly IUserInteraction _userInteraction;
     private readonly IEnumerable<IAgent> _subAgents;
 
-    public OrchestratorAgent(ILlmService llmService, IEnumerable<IAgent> subAgents, ILogger<OrchestratorAgent> logger)
+    public OrchestratorAgent(ILlmService llmService, IUserInteraction userInteraction, IEnumerable<IAgent> subAgents, ILogger<OrchestratorAgent> logger)
         : base(logger)
     {
         _llmService = llmService;
+        _userInteraction = userInteraction;
         _subAgents = subAgents;
     }
 

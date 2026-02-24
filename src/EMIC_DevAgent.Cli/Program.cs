@@ -1,13 +1,9 @@
 using EMIC_DevAgent.Core.Agents;
 using EMIC_DevAgent.Core.Agents.Base;
-using EMIC_DevAgent.Core.Agents.Validators;
 using EMIC_DevAgent.Core.Configuration;
 using EMIC_DevAgent.Core.Services.Compilation;
 using EMIC_DevAgent.Core.Services.Llm;
-using EMIC_DevAgent.Core.Services.Metadata;
-using EMIC_DevAgent.Core.Services.Sdk;
 using EMIC_DevAgent.Core.Services.Templates;
-using EMIC_DevAgent.Core.Services.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -28,7 +24,23 @@ public class Program
         configuration.GetSection("Llm").Bind(config.Llm);
 
         var services = new ServiceCollection();
-        ConfigureServices(services, config);
+        services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
+
+        // Core services
+        services.AddEmicDevAgent(config);
+
+        // CLI-specific: host-provided implementations
+        services.AddSingleton<ILlmService, ClaudeLlmService>();
+        services.AddSingleton<IUserInteraction, ConsoleUserInteraction>();
+        services.AddSingleton<IAgentSession, CliAgentSession>();
+        services.AddSingleton<IAgentEventSink, ConsoleEventSink>();
+
+        // Stubs pendientes de implementacion
+        services.AddSingleton<ICompilationService>(sp =>
+            throw new NotImplementedException("ICompilationService pendiente de implementacion"));
+        services.AddSingleton<ITemplateEngine>(sp =>
+            throw new NotImplementedException("ITemplateEngine pendiente de implementacion"));
+
         var provider = services.BuildServiceProvider();
 
         var logger = provider.GetRequiredService<ILogger<Program>>();
@@ -59,7 +71,8 @@ public class Program
             return;
         }
 
-        var orchestrator = provider.GetRequiredService<OrchestratorAgent>();
+        using var scope = provider.CreateScope();
+        var orchestrator = scope.ServiceProvider.GetRequiredService<OrchestratorAgent>();
         var context = new AgentContext { OriginalPrompt = prompt };
 
         try
@@ -74,65 +87,5 @@ public class Program
             Console.WriteLine();
             Console.WriteLine("Los agentes aun no estan implementados. Estructura creada correctamente.");
         }
-    }
-
-    private static void ConfigureServices(IServiceCollection services, EmicAgentConfig config)
-    {
-        services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
-
-        // Configuration
-        services.AddSingleton(config);
-        services.AddSingleton(SdkPaths.FromConfig(config));
-
-        // Services
-        services.AddSingleton<ILlmService, ClaudeLlmService>();
-        services.AddSingleton<ISdkScanner, SdkScanner>();
-        services.AddSingleton<SdkPathResolver>();
-        services.AddSingleton<EmicFileParser>();
-        services.AddSingleton<IMetadataService, MetadataService>();
-        services.AddSingleton<ICompilationService>(sp =>
-            throw new NotImplementedException("ICompilationService pendiente de implementacion"));
-        services.AddSingleton<ITemplateEngine>(sp =>
-            throw new NotImplementedException("ITemplateEngine pendiente de implementacion"));
-        services.AddSingleton<CompilationErrorParser>();
-        services.AddSingleton<ValidationService>();
-        services.AddSingleton<LlmPromptBuilder>();
-
-        // Templates
-        services.AddSingleton<ApiTemplate>();
-        services.AddSingleton<DriverTemplate>();
-        services.AddSingleton<ModuleTemplate>();
-
-        // Validators
-        services.AddSingleton<IValidator, LayerSeparationValidator>();
-        services.AddSingleton<IValidator, NonBlockingValidator>();
-        services.AddSingleton<IValidator, StateMachineValidator>();
-        services.AddSingleton<IValidator, DependencyValidator>();
-
-        // Agents
-        services.AddSingleton<AnalyzerAgent>();
-        services.AddSingleton<ApiGeneratorAgent>();
-        services.AddSingleton<DriverGeneratorAgent>();
-        services.AddSingleton<ModuleGeneratorAgent>();
-        services.AddSingleton<ProgramXmlAgent>();
-        services.AddSingleton<CompilationAgent>();
-        services.AddSingleton<RuleValidatorAgent>();
-        services.AddSingleton<OrchestratorAgent>(sp =>
-        {
-            var subAgents = new List<IAgent>
-            {
-                sp.GetRequiredService<AnalyzerAgent>(),
-                sp.GetRequiredService<ApiGeneratorAgent>(),
-                sp.GetRequiredService<DriverGeneratorAgent>(),
-                sp.GetRequiredService<ModuleGeneratorAgent>(),
-                sp.GetRequiredService<ProgramXmlAgent>(),
-                sp.GetRequiredService<CompilationAgent>(),
-                sp.GetRequiredService<RuleValidatorAgent>()
-            };
-            return new OrchestratorAgent(
-                sp.GetRequiredService<ILlmService>(),
-                subAgents,
-                sp.GetRequiredService<ILogger<OrchestratorAgent>>());
-        });
     }
 }
