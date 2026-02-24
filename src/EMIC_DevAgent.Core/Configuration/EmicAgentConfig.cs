@@ -15,4 +15,11 @@ public class LlmConfig
     public string Model { get; set; } = "claude-sonnet-4-20250514";
     public int MaxTokens { get; set; } = 4096;
     public double Temperature { get; set; } = 0.2;
+    public string ApiKey { get; set; } = string.Empty;
+
+    public string GetApiKey()
+        => !string.IsNullOrEmpty(ApiKey) ? ApiKey
+         : Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
+         ?? throw new InvalidOperationException(
+             "API key no configurada. Use Llm.ApiKey en appsettings.json o la variable de entorno ANTHROPIC_API_KEY");
 }

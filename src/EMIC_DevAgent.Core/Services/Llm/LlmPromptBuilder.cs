@@ -24,8 +24,20 @@ public class LlmPromptBuilder
         return this;
     }
 
-    public string Build()
+    public LlmPrompt Build()
     {
-        throw new NotImplementedException("LlmPromptBuilder.Build pendiente de implementacion");
+        var systemPrompt = string.Join("\n\n",
+            _systemParts.Concat(_contextParts).Where(s => !string.IsNullOrWhiteSpace(s)));
+        return new LlmPrompt(systemPrompt, _userPrompt);
+    }
+
+    public LlmPromptBuilder Clear()
+    {
+        _systemParts.Clear();
+        _contextParts.Clear();
+        _userPrompt = string.Empty;
+        return this;
     }
 }
+
+public record LlmPrompt(string SystemPrompt, string UserPrompt);

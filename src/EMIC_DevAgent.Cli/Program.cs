@@ -30,14 +30,16 @@ public class Program
         services.AddEmicDevAgent(config);
 
         // CLI-specific: host-provided implementations
-        services.AddSingleton<ILlmService, ClaudeLlmService>();
+        services.AddHttpClient<ClaudeLlmService>();
+        services.AddScoped<ILlmService>(sp => sp.GetRequiredService<ClaudeLlmService>());
         services.AddSingleton<IUserInteraction, ConsoleUserInteraction>();
         services.AddSingleton<IAgentSession, CliAgentSession>();
         services.AddSingleton<IAgentEventSink, ConsoleEventSink>();
 
+        // Compilation service
+        services.AddScoped<ICompilationService, EmicCompilationService>();
+
         // Stubs pendientes de implementacion
-        services.AddSingleton<ICompilationService>(sp =>
-            throw new NotImplementedException("ICompilationService pendiente de implementacion"));
         services.AddSingleton<ITemplateEngine>(sp =>
             throw new NotImplementedException("ITemplateEngine pendiente de implementacion"));
 

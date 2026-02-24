@@ -33,7 +33,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ModuleTemplate>();
 
         // Singleton services (stateless)
-        services.AddSingleton<LlmPromptBuilder>();
+        services.AddTransient<LlmPromptBuilder>();
         services.AddSingleton<CompilationErrorParser>();
 
         // MediaAccess (scoped, needs IAgentSession for user context)
