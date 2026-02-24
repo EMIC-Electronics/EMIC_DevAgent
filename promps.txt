@@ -1,0 +1,32 @@
+Crea un plan detallado para comenzar a desarrollar un agente de IA que permita desarrollar codigo para SDK
+  Comienza creando un archivo en md con algunos conceptos claves sobre el sistema EMIC, basado en @Manual_para_desarrolladores/Manual_Desarrollo_EMIC/Seccion_1_Introduccion\
+  solo resume los conceptos relevantes para la creacion del agente:
+  - Objetivo del agente.
+  - Subagentes.
+  - Orquestacion.
+  - Estructura de la informacion.
+
+  Contexto: el agente sera un CLI, creado con c# (tipo claude code)
+  especifica la division de tareas y las etapas de ineraccion con el usuario.
+
+  Los ejemplos de uso seran:
+  "crear un nuevo modulos para sensar temperatura de entre -10 y 80 grados celcius"
+  "crear una api para implentar un filtro IIR configurable"
+  "crear un driver para el chip LM35"
+
+  El agente debe asegurarse de quitar todas las ambiguedades del promp, haciendo las pregunatas necesarias hasta llegar a una definicion estricta
+  Cuando se pide crear un modulo procurar reutilizar las apis y driver existente, si no existe una api adecuada crear una que sea independiente del modulos.
+  Estrictamente prohibido modificar código de las apis y dreivers que estan siendo utilizadas por otros modulos, aunque si está permitido agregar nuevas fucniones .
+  El sistema puede agregar en, cada carpeta, archivos con  metatexto e informacion para que los sub-agentes conozcan el estado del desarrollo, por ejemplo las distintas relaciones entre modulos, apis,
+  driver, hal, hard, etc. O anotar si supero las pruebas de debugero, o cualquier referencia al avance del desarrollo.
+
+  Importante: en el sistema emic existe un editor de codigo donde el usuario desarrolla un script codificado en un archivo llamado program.xml con la logica de la aplicacion que se agrega al proyecto de
+  cada modulo, es por eso que habrá un subagente que se encargue de desarrollar el program.xml junto con otros archivos necesarios, Luego otro proceso que ya existe convierte el progam.xml en codigo C. y
+  arma el proyecto completo con todas las librerias obtenidas del SDK,
+  Tambien existirá un sub-agente que compile el codigo generado y obtenga la lista de errors de compilacion, esa lista se usara para corregir los error del codigo C de los archivos generados y de los
+  archivos del SDK, (es decir retropropagrá las correcciones para generar una nueva version de codigo compilable , pero con los errores conocidos)
+  La informacion sobre el flujo de trabajo de los proyectos para testeo sera provista cuando sea necesario implementar los sub-agentes asociados a la etapa de depuracion.
+
+  Recomiendo usar distintos sub-agentes para verificar el cumplimiento de reglas no negocibles, como : Separacion en capas, Codigo no bloqueante, Maquinas de estados, etc.
+  Comienza creando dentro de la carpeta de trabajo una carpeta como submodule git en donde se guardara el plan de trabajo, y todos los archivos relacionados mas el proyecto en C#.
+  En esta etapa solo  crea las estructura del agente y subagentes.  y la interaccion entre los subagentes y el usuario. (puedes leer los archivos del SDK de ejemplo en esta carpeta.)
