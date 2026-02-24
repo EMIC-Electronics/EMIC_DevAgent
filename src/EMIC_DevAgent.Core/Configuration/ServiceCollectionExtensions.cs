@@ -1,3 +1,4 @@
+using EMIC.Shared.Services.Storage;
 using EMIC_DevAgent.Core.Agents;
 using EMIC_DevAgent.Core.Agents.Base;
 using EMIC_DevAgent.Core.Agents.Validators;
@@ -34,6 +35,15 @@ public static class ServiceCollectionExtensions
         // Singleton services (stateless)
         services.AddSingleton<LlmPromptBuilder>();
         services.AddSingleton<CompilationErrorParser>();
+
+        // MediaAccess (scoped, needs IAgentSession for user context)
+        services.AddScoped<MediaAccess>(sp =>
+        {
+            var session = sp.GetRequiredService<IAgentSession>();
+            var drivers = new Dictionary<string, string>(session.VirtualDrivers);
+            drivers["DEV"] = session.SdkPath;
+            return new MediaAccess(session.UserEmail, drivers);
+        });
 
         // Scoped services (per-request state)
         services.AddScoped<SdkPathResolver>();
