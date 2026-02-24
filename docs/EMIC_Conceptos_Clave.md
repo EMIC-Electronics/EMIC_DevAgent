@@ -232,8 +232,8 @@ _modules/
 
 ### 7.1 Header (.h) con Condicionales EMIC
 ```c
-#ifndef _COMPONENT_H
-#define _COMPONENT_H
+#ifndef _COMPONENT_.{name}_H
+#define _COMPONENT_.{name}_H
 
 void .{name}._init(void);
 

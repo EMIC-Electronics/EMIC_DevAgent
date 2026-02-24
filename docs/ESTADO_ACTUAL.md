@@ -2,20 +2,25 @@
 
 > Ultima actualizacion: Febrero 2026
 > Branch: `main` en `EMIC-Electronics/EMIC_DevAgent`
-> Parent repo: `EMIC-Electronics/EMIC_IA` branch `feature/IA-Agent`
+> Parent repo: `EMIC-Electronics/CircuitEMIC` branch `feature/devagent-implementation`
 
 ---
 
 ## Resumen Ejecutivo
 
-EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar codigo para el SDK EMIC a partir de prompts en lenguaje natural. Actualmente la **estructura completa esta creada** con todos los stubs, pero **ninguna logica de negocio esta implementada** (todos los metodos core lanzan `NotImplementedException`).
+EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar codigo para el SDK EMIC a partir de prompts en lenguaje natural. La **estructura completa esta creada** con stubs, y la **Fase 0 (separacion Core/CLI)** esta completada: interfaces de abstraccion, DI centralizado, y implementaciones CLI.
 
 **Lo que funciona hoy:**
 - `dotnet build` compila sin errores (0 warnings)
 - `dotnet test` ejecuta 6 tests unitarios (todos pasan)
 - El CLI arranca, lee configuracion, muestra UI basica
-- La inyeccion de dependencias esta configurada
+- Inyeccion de dependencias centralizada via `AddEmicDevAgent()` extension method
 - Todos los modelos de datos son funcionales
+- Separacion Core/CLI con interfaces: `IUserInteraction`, `IAgentSession`, `IAgentEventSink`
+- Implementaciones CLI: `ConsoleUserInteraction`, `CliAgentSession`, `ConsoleEventSink`
+- `NullAgentEventSink` como fallback no-op
+- Lifetimes correctos: Scoped para agentes/servicios con estado, Singleton para stateless
+- `OrchestratorAgent` recibe `IUserInteraction` (preparado para desambiguacion)
 
 **Lo que NO funciona aun:**
 - Ningun agente ejecuta logica real
@@ -27,23 +32,39 @@ EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar cod
 
 ---
 
-## Inventario de Archivos (49 archivos .cs)
+## Inventario de Archivos (57 archivos .cs)
 
 ### Estado por categoria
 
 | Categoria | Archivos | Implementados | Con Stubs |
 |-----------|----------|--------------|-----------|
 | Modelos de datos | 11 | 11 | 0 |
-| Configuracion | 2 | 2 | 0 |
-| Interfaces | 6 | 6 | 0 |
+| Configuracion | 5 | 5 | 0 |
+| Interfaces (Core) | 9 | 9 | 0 |
 | Base framework | 4 | 4 | 0 |
-| CLI (Program.cs) | 1 | 1 | 0 |
+| CLI | 4 | 4 | 0 |
 | Tests | 1 | 1 | 0 |
 | Agentes | 8 | 0 | 8 |
 | Validadores | 4 | 0 | 4 |
 | Servicios | 10 | 0 | 10 |
 | Pipeline | 2 | 1 parcial | 1 |
-| **Total** | **49** | **26** | **22** |
+| **Total** | **58** | **35** | **22** |
+
+### Archivos nuevos de Fase 0 (Core/CLI separation)
+
+**Core - Interfaces:**
+- `Agents/Base/IUserInteraction.cs` - Interaccion bidireccional con usuario
+- `Agents/Base/IAgentEventSink.cs` - Eventos de progreso en tiempo real
+- `Configuration/IAgentSession.cs` - Contexto de sesion (email, SDK path)
+
+**Core - Implementaciones:**
+- `Configuration/ServiceCollectionExtensions.cs` - `AddEmicDevAgent()` extension method
+- `Configuration/NullAgentEventSink.cs` - Fallback no-op para IAgentEventSink
+
+**CLI - Implementaciones:**
+- `ConsoleUserInteraction.cs` - IUserInteraction via Console.ReadLine/WriteLine
+- `CliAgentSession.cs` - IAgentSession con valores fijos ("devagent@local")
+- `ConsoleEventSink.cs` - IAgentEventSink con Console.WriteLine
 
 ### Detalle de stubs pendientes (todos lanzan NotImplementedException)
 
@@ -110,13 +131,15 @@ EMIC_DevAgent/
     promps.txt
     docs/
         EMIC_Conceptos_Clave.md          # Conceptos del SDK EMIC
-        architecture.md                   # Diagrama de agentes
+        architecture.md                   # Diagrama de agentes + separacion Core/CLI
         ESTADO_ACTUAL.md                  # ESTE ARCHIVO
-        PROXIMOS_PASOS.md                 # Plan detallado de desarrollo
-        PROMPTS_SUGERIDOS.md              # Prompts para continuar
+        MEJORAS_Y_SERVICIOS_COMPARTIDOS.md  # Analisis de servicios compartidos
     src/
         EMIC_DevAgent.Cli/
-            Program.cs                    # Entry point con DI configurado
+            Program.cs                    # Entry point (usa AddEmicDevAgent + registros CLI)
+            ConsoleUserInteraction.cs     # IUserInteraction via Console
+            CliAgentSession.cs            # IAgentSession con valores fijos
+            ConsoleEventSink.cs           # IAgentEventSink via Console
             EMIC_DevAgent.Cli.csproj
             appsettings.json              # Configuracion
         EMIC_DevAgent.Core/
@@ -127,7 +150,9 @@ EMIC_DevAgent/
                     AgentContext.cs       # Contexto compartido + enums
                     AgentMessage.cs       # Mensajes inter-agente
                     AgentResult.cs        # Resultado con factories
-                OrchestratorAgent.cs      # STUB
+                    IUserInteraction.cs   # Abstraccion interaccion usuario
+                    IAgentEventSink.cs    # Abstraccion eventos/progreso
+                OrchestratorAgent.cs      # STUB (recibe IUserInteraction)
                 AnalyzerAgent.cs          # STUB
                 ApiGeneratorAgent.cs      # STUB
                 DriverGeneratorAgent.cs   # STUB
@@ -183,6 +208,9 @@ EMIC_DevAgent/
             Configuration/
                 EmicAgentConfig.cs        # Config principal
                 SdkPaths.cs              # Rutas del SDK
+                IAgentSession.cs          # Abstraccion sesion usuario/SDK
+                ServiceCollectionExtensions.cs  # AddEmicDevAgent() extension
+                NullAgentEventSink.cs     # Fallback no-op IAgentEventSink
     tests/
         EMIC_DevAgent.Tests/
             EMIC_DevAgent.Tests.csproj

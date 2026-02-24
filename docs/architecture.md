@@ -46,7 +46,7 @@ REPORTE FINAL AL USUARIO
 
 | Agente | Responsabilidad |
 |--------|----------------|
-| **OrchestratorAgent** | Recibe prompt, clasifica intent, desambigua con preguntas al usuario, delega a subagentes, coordina flujo completo |
+| **OrchestratorAgent** | Recibe prompt, clasifica intent, desambigua via `IUserInteraction`, delega a subagentes, coordina flujo completo |
 | **AnalyzerAgent** | Escanea SDK (_api, _drivers, _modules, _hal), encuentra componentes reutilizables, identifica gaps |
 | **ApiGeneratorAgent** | Genera archivos .emic, .h, .c para nuevas APIs siguiendo patrones existentes (led.emic, relay.emic) |
 | **DriverGeneratorAgent** | Genera drivers para chips externos (.emic, .h, .c) usando HAL |
@@ -64,6 +64,71 @@ REPORTE FINAL AL USUARIO
 | **StateMachineValidator** | Operaciones complejas usan patron switch(state) con variable estatica y timeouts |
 | **DependencyValidator** | Todo EMIC:setInput referencia archivos existentes, no hay dependencias circulares |
 
+## Separacion Core/CLI
+
+EMIC_DevAgent.Core esta disenado como **libreria pura** sin acoplamiento a ningun host especifico. Tiene dos consumidores previstos:
+1. **EMIC_DevAgent.Cli** - Herramienta de linea de comandos (actual)
+2. **EMIC.Web.IDE** - Agente embebido en la aplicacion web (futuro)
+
+### Interfaces de abstraccion (en Core)
+
+| Interfaz | Proposito | CLI implementa | Web implementara |
+|----------|----------|----------------|-----------------|
+| `IUserInteraction` | Preguntas, confirmaciones, progreso | `ConsoleUserInteraction` | `SignalRUserInteraction` |
+| `IAgentSession` | Contexto usuario/SDK | `CliAgentSession` | `WebAgentSession` |
+| `IAgentEventSink` | Eventos en tiempo real (steps, archivos, compilacion) | `ConsoleEventSink` | `SignalREventSink` |
+
+### Registro DI
+
+Core expone `AddEmicDevAgent(config)` extension method que registra todos los servicios internos. Cada host solo agrega sus implementaciones especificas:
+
+```csharp
+// CLI Program.cs
+services.AddEmicDevAgent(config);
+services.AddSingleton<IUserInteraction, ConsoleUserInteraction>();
+services.AddSingleton<IAgentSession, CliAgentSession>();
+services.AddSingleton<IAgentEventSink, ConsoleEventSink>();
+services.AddSingleton<ILlmService, ClaudeLlmService>();
+```
+
+Si el host no registra `IAgentEventSink`, Core usa `NullAgentEventSink` como fallback.
+
+### Lifetimes
+
+| Servicio | Lifetime | Razon |
+|----------|----------|-------|
+| Config, SdkPaths, Validadores, Templates | Singleton | Stateless |
+| LlmPromptBuilder, CompilationErrorParser | Singleton | Stateless |
+| Agentes, SdkScanner, EmicFileParser, MetadataService | Scoped | Dependen de contexto por usuario/request |
+| OrchestratorAgent | Scoped | Factory que resuelve sub-agents del scope |
+
+### Diagrama de capas
+
+```
++-------------------+     +---------------------------+
+| EMIC_DevAgent.Cli |     | EMIC.Web.IDE              |
+|   (Console host)  |     |   (ASP.NET host, futuro)  |
+|                   |     |                           |
+| ConsoleInteraction|     | SignalRInteraction        |
+| CliAgentSession   |     | WebAgentSession           |
+| ConsoleEventSink  |     | SignalREventSink          |
++--------+----------+     +------------+--------------+
+         |                              |
+         |   ProjectReference           |   ProjectReference
+         v                              v
++--------------------------------------------------+
+|              EMIC_DevAgent.Core                   |
+|                                                  |
+|  Interfaces:                                     |
+|    IUserInteraction, IAgentSession,              |
+|    IAgentEventSink, ILlmService,                 |
+|    ISdkScanner, IValidator, ICompilationService  |
+|                                                  |
+|  Extension: AddEmicDevAgent()                    |
+|  Agentes, Pipeline, Validadores, Templates       |
++--------------------------------------------------+
+```
+
 ## Estructura del Proyecto
 
 ```
@@ -72,13 +137,25 @@ EMIC_DevAgent/
     docs/
         EMIC_Conceptos_Clave.md          # Conceptos clave del SDK EMIC
         architecture.md                   # Este archivo
+        ESTADO_ACTUAL.md                  # Estado actual del proyecto
+        MEJORAS_Y_SERVICIOS_COMPARTIDOS.md  # Analisis de servicios compartidos
     src/
         EMIC_DevAgent.Cli/               # Punto de entrada CLI
-            Program.cs
+            Program.cs                   # Entry point (usa AddEmicDevAgent + registros CLI)
+            CliAgentSession.cs           # IAgentSession para CLI
+            ConsoleUserInteraction.cs    # IUserInteraction para CLI
+            ConsoleEventSink.cs          # IAgentEventSink para CLI
             appsettings.json
-        EMIC_DevAgent.Core/              # Logica principal
+        EMIC_DevAgent.Core/              # Logica principal (libreria pura)
             Agents/                      # Agentes del sistema
                 Base/                    # Interfaces y clases base
+                    IAgent.cs
+                    AgentBase.cs
+                    AgentContext.cs       # Contexto compartido + enums
+                    AgentMessage.cs
+                    AgentResult.cs
+                    IUserInteraction.cs  # Abstraccion de interaccion con usuario
+                    IAgentEventSink.cs   # Abstraccion de eventos/progreso
                 Validators/              # Validadores especializados
             Orchestration/               # Pipeline de orquestacion
             Models/                      # Modelos de datos
@@ -93,6 +170,11 @@ EMIC_DevAgent/
                 Compilation/             # Compilacion XC16
                 Validation/              # Validacion de reglas
             Configuration/               # Configuracion
+                EmicAgentConfig.cs
+                SdkPaths.cs
+                IAgentSession.cs         # Abstraccion de sesion usuario/SDK
+                ServiceCollectionExtensions.cs  # AddEmicDevAgent() extension method
+                NullAgentEventSink.cs    # Fallback no-op para IAgentEventSink
     tests/
         EMIC_DevAgent.Tests/             # Tests unitarios
 ```

@@ -1,6 +1,6 @@
 # EMIC DevAgent - Mejoras, Cambios y Servicios Compartidos con EMIC.Shared
 
-> Fecha: Febrero 2026
+> Fecha: Febrero 2026 (actualizado post-Fase 0)
 > Autor: Analisis automatizado Claude Code
 > Objetivo: Identificar servicios de EMIC.Shared reutilizables y recomendar mejoras arquitectonicas
 
@@ -18,26 +18,32 @@ El proyecto EMIC_DevAgent tiene **22 stubs que lanzan NotImplementedException**.
 
 ---
 
-## 0. Separacion Core/CLI: Preparar para Embedding en EMIC.Web.IDE
+## 0. Separacion Core/CLI: Preparar para Embedding en EMIC.Web.IDE ✅ COMPLETADO
 
 ### Contexto
-`EMIC_DevAgent.Core` tendra **dos consumidores**:
+`EMIC_DevAgent.Core` tiene **dos consumidores** previstos:
 1. **EMIC_DevAgent.Cli** - Herramienta de linea de comandos (actual)
 2. **EMIC.Web.IDE** - Agente embebido en la aplicacion web (futuro)
 
-Esto impone restricciones arquitectonicas fuertes sobre Core: debe ser una **libreria pura** sin acoplamiento a ningun host especifico.
+Core es una **libreria pura** sin acoplamiento a ningun host especifico.
 
-### Estado actual: que esta bien y que falta
+### Lo que se implemento
 
-**Bien hecho:**
-- Core no tiene ninguna llamada a `Console.*` (verificado)
-- Los agentes usan `ILogger` (abstraido) para logging
-- `AgentResult.NeedsInput` ya contempla el flujo de desambiguacion
-- Los modelos (`AgentContext`, `AgentResult`, `DisambiguationQuestion`) son POCOs sin dependencia de host
+- `IUserInteraction` en `Core/Agents/Base/` — preguntas, progreso, confirmacion
+- `IAgentEventSink` en `Core/Agents/Base/` — eventos de steps, archivos, validacion, compilacion
+- `IAgentSession` en `Core/Configuration/` — email, SdkPath, VirtualDrivers
+- `NullAgentEventSink` en `Core/Configuration/` — fallback no-op (TryAdd)
+- `ServiceCollectionExtensions.AddEmicDevAgent()` en `Core/Configuration/` — registro DI centralizado
+- `ConsoleUserInteraction` en `Cli/` — implementacion CLI con Console
+- `CliAgentSession` en `Cli/` — sesion fija "devagent@local"
+- `ConsoleEventSink` en `Cli/` — logging de eventos por consola
+- `OrchestratorAgent` modificado para recibir `IUserInteraction` como dependencia
+- `Program.cs` refactorizado: usa `AddEmicDevAgent()` + registros CLI + `CreateScope()`
+- Lifetimes corregidos: Scoped para agentes/servicios con estado, Singleton para stateless
 
-**Problemas criticos a resolver:**
+### Diseno anterior (referencia):
 
-### 0.1 Falta interfaz `IUserInteraction` para comunicacion bidireccional
+### 0.1 Interfaz `IUserInteraction` para comunicacion bidireccional ✅ IMPLEMENTADO
 
 El `OrchestratorAgent` necesita hacer preguntas al usuario y reportar progreso. Actualmente no hay mecanismo para esto en Core.
 
@@ -103,7 +109,7 @@ public class SignalRUserInteraction : IUserInteraction
 
 **Inyeccion:** `IUserInteraction` se inyecta en `OrchestratorAgent` (y cualquier agente que necesite interaccion). El host lo registra en DI.
 
-### 0.2 Falta `IAgentSession` para contexto de ejecucion por usuario
+### 0.2 `IAgentSession` para contexto de ejecucion por usuario ✅ IMPLEMENTADO
 
 **Problema:** `MediaAccess` requiere un `userName` (email del usuario autenticado). En CLI es un valor fijo, en Web viene del claim OAuth. Actualmente no hay forma de que Core obtenga esta informacion sin acoplarse al host.
 
@@ -152,104 +158,58 @@ services.AddScoped<MediaAccess>(sp =>
 });
 ```
 
-### 0.3 DI Registration: mover de Program.cs a extension method en Core
+### 0.3 DI Registration: mover de Program.cs a extension method en Core ✅ IMPLEMENTADO
 
-**Problema:** Toda la configuracion de DI esta en `EMIC_DevAgent.Cli/Program.cs`. Cuando EMIC.Web.IDE quiera usar Core, tendra que duplicar ~60 lineas de registro.
+El extension method `AddEmicDevAgent()` registra todos los servicios Core con lifetimes correctos (Singleton para stateless, Scoped para con-estado). Incluye factory para OrchestratorAgent con resolucion de sub-agents y `TryAddSingleton<IAgentEventSink, NullAgentEventSink>` como fallback.
 
-**Solucion:** Crear extension method en Core:
-
+**Uso actual en CLI Program.cs:**
 ```csharp
-// EMIC_DevAgent.Core/Configuration/ServiceCollectionExtensions.cs
-public static class ServiceCollectionExtensions
-{
-    public static IServiceCollection AddEmicDevAgent(
-        this IServiceCollection services,
-        EmicAgentConfig config)
-    {
-        // Configuration
-        services.AddSingleton(config);
-        services.AddSingleton(SdkPaths.FromConfig(config));
+services.AddEmicDevAgent(config);
+services.AddSingleton<ILlmService, ClaudeLlmService>();
+services.AddSingleton<IUserInteraction, ConsoleUserInteraction>();
+services.AddSingleton<IAgentSession, CliAgentSession>();
+services.AddSingleton<IAgentEventSink, ConsoleEventSink>();
 
-        // Core services (independientes del host)
-        services.AddSingleton<ISdkScanner, SdkScanner>();
-        services.AddSingleton<SdkPathResolver>();
-        services.AddTransient<EmicFileParser>();  // Transient: usa TreeMaker con estado
-        services.AddSingleton<IMetadataService, MetadataService>();
-        services.AddSingleton<ValidationService>();
-        services.AddSingleton<LlmPromptBuilder>();
-
-        // Templates
-        services.AddSingleton<ApiTemplate>();
-        services.AddSingleton<DriverTemplate>();
-        services.AddSingleton<ModuleTemplate>();
-
-        // Validators
-        services.AddSingleton<IValidator, LayerSeparationValidator>();
-        services.AddSingleton<IValidator, NonBlockingValidator>();
-        services.AddSingleton<IValidator, StateMachineValidator>();
-        services.AddSingleton<IValidator, DependencyValidator>();
-
-        // Agents
-        services.AddSingleton<AnalyzerAgent>();
-        services.AddSingleton<ApiGeneratorAgent>();
-        services.AddSingleton<DriverGeneratorAgent>();
-        services.AddSingleton<ModuleGeneratorAgent>();
-        services.AddSingleton<ProgramXmlAgent>();
-        services.AddSingleton<CompilationAgent>();
-        services.AddSingleton<RuleValidatorAgent>();
-
-        // Orchestrator (depende de sub-agents)
-        services.AddSingleton<OrchestratorAgent>(sp => { /* ... */ });
-
-        return services;
-    }
-}
+// Resolucion con scope
+using var scope = provider.CreateScope();
+var orchestrator = scope.ServiceProvider.GetRequiredService<OrchestratorAgent>();
 ```
 
-**Cada host solo registra sus implementaciones especificas:**
+**Uso futuro en Web:**
 ```csharp
-// CLI Program.cs (simplificado)
-services.AddEmicDevAgent(config);
-services.AddSingleton<IUserInteraction, ConsoleUserInteraction>();
-services.AddSingleton<IAgentSession>(new CliAgentSession { SdkPath = config.SdkPath });
-services.AddSingleton<ILlmService, ClaudeLlmService>();  // o DevAgentLlmService
-
-// Web Program.cs (futuro)
 services.AddEmicDevAgent(config);
 services.AddScoped<IUserInteraction, SignalRUserInteraction>();
 services.AddScoped<IAgentSession>(sp => /* construir desde HttpContext.User */);
 services.AddScoped<ILlmService>(sp => /* reusar ClaudeAiService del IDE */);
 ```
 
-### 0.4 Lifetime de servicios: Singleton vs Scoped
+### 0.4 Lifetime de servicios: Singleton vs Scoped ✅ IMPLEMENTADO
 
-**Problema critico para Web:** En CLI todo puede ser Singleton (un solo usuario, una sola ejecucion). En Web, cada request/conexion tiene un usuario distinto → los servicios que dependen de `MediaAccess` o `IAgentSession` deben ser **Scoped**.
+Lifetimes configurados en `AddEmicDevAgent()`:
 
-**Solucion:** Cambiar lifetimes en Core a Scoped para compatibilidad:
+| Servicio | Lifetime | Razon |
+|----------|----------|-------|
+| Config, SdkPaths | Singleton | Inmutable |
+| Validadores (IValidator) | Singleton | Stateless |
+| Templates (Api, Driver, Module) | Singleton | Stateless |
+| LlmPromptBuilder, CompilationErrorParser | Singleton | Stateless |
+| ISdkScanner, SdkPathResolver, EmicFileParser | Scoped | Pueden tener estado por operacion |
+| IMetadataService, ValidationService | Scoped | Dependen de contexto |
+| Todos los Agentes | Scoped | Dependen de servicios scoped |
+| OrchestratorAgent | Scoped (factory) | Resuelve sub-agents del scope |
+| IAgentEventSink (NullAgentEventSink) | Singleton (TryAdd) | Fallback stateless |
 
-| Servicio | CLI (actual: Singleton) | Web (futuro: Scoped) | Recomendacion |
-|----------|------------------------|---------------------|---------------|
-| `MediaAccess` | Singleton (1 usuario) | Scoped (por request) | **Scoped** |
-| `IAgentSession` | Singleton | Scoped | **Scoped** |
-| `IUserInteraction` | Singleton | Scoped (por conexion SignalR) | **Scoped** |
-| `OrchestratorAgent` | Singleton | Scoped (usa MediaAccess) | **Scoped** |
-| `SdkScanner` | Singleton (cache) | Scoped o Singleton con cache por SDK | **Evaluar** |
-| `ILlmService` | Singleton | Scoped (api key por usuario?) | **Scoped** |
-| Validadores | Singleton | Singleton (stateless) | **Singleton** |
-| Config, SdkPaths | Singleton | Singleton | **Singleton** |
-
-**Regla general:** Si depende de usuario → Scoped. Si es stateless → Singleton. En CLI, Scoped se comporta como Singleton dentro de un scope manual:
+En CLI, el scope se crea manualmente:
 ```csharp
-// CLI: crear scope para simular request
 using var scope = provider.CreateScope();
 var orchestrator = scope.ServiceProvider.GetRequiredService<OrchestratorAgent>();
 ```
 
-### 0.5 Eventos y callbacks de progreso (para UI web en tiempo real)
+### 0.5 Eventos y callbacks de progreso (para UI web en tiempo real) ✅ IMPLEMENTADO
 
-**Problema:** EMIC.Web.IDE ya usa **SignalR** extensivamente (65 archivos con referencias a Hub/SignalR). El agente embebido necesitara reportar progreso en tiempo real al browser.
+`IAgentEventSink` implementado en Core con `NullAgentEventSink` como fallback. CLI usa `ConsoleEventSink`.
 
-**Solucion:** Ademas de `IUserInteraction`, agregar un mecanismo de eventos:
+**Interfaz implementada:**
 
 ```csharp
 // EMIC_DevAgent.Core/Agents/Base/IAgentEventSink.cs
@@ -268,16 +228,17 @@ public interface IAgentEventSink
 
 Esto permite que el `OrchestrationPipeline` emita eventos sin saber quien los consume.
 
-### 0.6 Resumen de interfaces a crear en Core
+### 0.6 Resumen de interfaces creadas en Core ✅ IMPLEMENTADO
 
-| Interfaz | Proposito | La implementa |
-|----------|----------|---------------|
-| `IUserInteraction` | Preguntas, confirmaciones | CLI: Console, Web: SignalR |
-| `IAgentSession` | Contexto usuario/SDK | CLI: config fijo, Web: OAuth claims |
-| `IAgentEventSink` | Progreso en tiempo real | CLI: Console/Logger, Web: SignalR Hub |
-| Extension method `AddEmicDevAgent()` | Registro DI compartido | Consumido por CLI y Web |
+| Interfaz | Proposito | CLI implementacion | Web (futuro) |
+|----------|----------|-------------------|--------------|
+| `IUserInteraction` | Preguntas, confirmaciones, progreso | `ConsoleUserInteraction` | `SignalRUserInteraction` |
+| `IAgentSession` | Contexto usuario/SDK | `CliAgentSession` | `WebAgentSession` |
+| `IAgentEventSink` | Eventos en tiempo real | `ConsoleEventSink` | `SignalREventSink` |
+| `AddEmicDevAgent()` | Registro DI compartido | Consumido en Program.cs | Consumido por Startup/Program |
+| `NullAgentEventSink` | Fallback no-op | Registrado via TryAdd | Reemplazado por SignalR impl |
 
-### 0.7 Diagrama de capas con separacion
+### 0.7 Diagrama de capas con separacion ✅ IMPLEMENTADO
 
 ```
 +-------------------+     +---------------------------+
@@ -697,14 +658,22 @@ Con EMIC.Shared, la Fase 1 (EmicFileParser, SdkPathResolver, SdkScanner, Metadat
 ### Nuevo orden de fases sugerido
 
 ```
-FASE 0 (Nueva - Infraestructura)
-  0.1 Agregar referencia a EMIC.Shared
-  0.2 Registrar MediaAccess en DI
-  0.3 Adaptar EmicFileParser como wrapper de TreeMaker
-  0.4 Implementar SdkScanner delegando a DiscoveryService
-  0.5 Implementar MetadataService con MediaAccess JSON helpers
-  0.6 Implementar SdkPathResolver.ResolveVolume() con MediaAccess
-  0.7 Tests de integracion con SDK real
+FASE 0 (Separacion Core/CLI) ✅ COMPLETADO
+  0.1 Interfaces de abstraccion (IUserInteraction, IAgentEventSink, IAgentSession)
+  0.2 NullAgentEventSink (fallback)
+  0.3 ServiceCollectionExtensions.AddEmicDevAgent()
+  0.4 OrchestratorAgent recibe IUserInteraction
+  0.5 Implementaciones CLI (ConsoleUserInteraction, CliAgentSession, ConsoleEventSink)
+  0.6 Refactorizacion de Program.cs (scoped + extension method)
+
+FASE 0.5 (Integracion EMIC.Shared - Infraestructura)
+  0.5.1 Agregar referencia a EMIC.Shared
+  0.5.2 Registrar MediaAccess en DI
+  0.5.3 Adaptar EmicFileParser como wrapper de TreeMaker
+  0.5.4 Implementar SdkScanner delegando a DiscoveryService
+  0.5.5 Implementar MetadataService con MediaAccess JSON helpers
+  0.5.6 Implementar SdkPathResolver.ResolveVolume() con MediaAccess
+  0.5.7 Tests de integracion con SDK real
 
 FASE 1 (Validadores - sin cambios)
   1.1-1.4 Validadores (implementacion nueva, no hay equivalente en EMIC.Shared)
@@ -843,17 +812,19 @@ EMIC_DevAgent.Cli
 
 ## 10. Checklist de Implementacion
 
-### Fase 0: Separacion Core/CLI (HACER PRIMERO)
-- [ ] Crear `IUserInteraction` en Core/Agents/Base/
-- [ ] Crear `IAgentSession` en Core/Configuration/
-- [ ] Crear `IAgentEventSink` en Core/Agents/Base/
-- [ ] Crear `ServiceCollectionExtensions.AddEmicDevAgent()` en Core/Configuration/
-- [ ] Mover registro DI de Program.cs al extension method
-- [ ] Crear `ConsoleUserInteraction` en Cli/
-- [ ] Crear `CliAgentSession` en Cli/
-- [ ] Crear `ConsoleEventSink` en Cli/ (logea a ILogger)
-- [ ] Cambiar lifetimes de Singleton a Scoped donde aplique
-- [ ] Actualizar Program.cs del CLI para usar scope + extension method
+### Fase 0: Separacion Core/CLI ✅ COMPLETADO
+- [x] Crear `IUserInteraction` en Core/Agents/Base/
+- [x] Crear `IAgentSession` en Core/Configuration/
+- [x] Crear `IAgentEventSink` en Core/Agents/Base/
+- [x] Crear `NullAgentEventSink` en Core/Configuration/ (fallback)
+- [x] Crear `ServiceCollectionExtensions.AddEmicDevAgent()` en Core/Configuration/
+- [x] Mover registro DI de Program.cs al extension method
+- [x] Crear `ConsoleUserInteraction` en Cli/
+- [x] Crear `CliAgentSession` en Cli/
+- [x] Crear `ConsoleEventSink` en Cli/
+- [x] Cambiar lifetimes de Singleton a Scoped donde aplique
+- [x] Actualizar Program.cs del CLI para usar scope + extension method
+- [x] Agregar `IUserInteraction` como dependencia de `OrchestratorAgent`
 
 ### Fase 0.5: Integracion con EMIC.Shared
 - [ ] Agregar `<ProjectReference>` a EMIC.Shared en EMIC_DevAgent.Core.csproj
