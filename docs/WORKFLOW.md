@@ -34,6 +34,14 @@ El prompt del usuario puede ser ambiguo. El agente DEBE:
 5. Crear/modificar modulo (generate.emic que conecta todo)
 6. Crear proyecto de test y compilar
 
+**Regla de contexto por capa**: Al implementar bottom-up, las capas inferiores NO deben conocer
+el contexto completo del proyecto. El agente solo proporciona a cada capa las definiciones y
+el contexto que le corresponden. Esto fuerza un diseño generico y reutilizable, no ad-hoc.
+- Al generar hard/hal: solo recibe nombre de periferico, pines, y parametros electricos
+- Al generar driver: solo recibe interfaz del chip y parametros HAL que necesita
+- Al generar API: solo recibe nombre del driver y parametros funcionales
+- El modulo es el unico que tiene vision completa del proyecto
+
 ## 4. Retrocompatibilidad en capas inferiores
 
 **Regla critica**: Solo crear hard/hal cuando NO exista el codigo necesario.
@@ -140,3 +148,42 @@ original del SDK.
 - Queda pendiente la definicion de un agente especializado en convertir
   componentes de versiones viejas del SDK a la version actual
 - Esto incluye: renombrar funciones, actualizar parametros, adaptar patrones
+
+## 11. Pipeline y agentes configurables
+
+Es deseable que los pipelines y agentes sean reconfigurables sin modificar codigo,
+pero hay que buscar el equilibrio entre complejidad y modularidad. No sobrediseñar:
+- Configuracion via archivo JSON cuando aporte valor real (ej: habilitar/deshabilitar agentes, ajustar parametros)
+- Evitar abstracciones innecesarias que compliquen el codigo sin beneficio claro
+- Si un cambio es infrecuente, es aceptable que requiera modificar codigo
+
+**Ejemplo de configuracion:**
+```json
+{
+  "pipeline": "embedded-c",
+  "steps": [
+    { "agent": "Analyzer", "enabled": true },
+    { "agent": "ApiGenerator", "enabled": true },
+    { "agent": "DriverGenerator", "enabled": true },
+    { "agent": "ModuleGenerator", "enabled": true },
+    { "agent": "RuleValidator", "enabled": true },
+    { "agent": "Compilation", "enabled": true, "maxRetries": 5 }
+  ],
+  "language": "C",
+  "compiler": "XC16"
+}
+```
+
+## 12. Extensibilidad a otros tipos de SDK
+
+La arquitectura del DevAgent esta diseñada para ser extensible a otros dominios:
+- La estructura de SDK (capas: api, drivers, hal, hard, modules) es universal
+- Lo que cambia entre dominios es el **lenguaje** y el **compilador/toolchain**
+- Ejemplos futuros:
+  - **SDK Web Frontend**: JS/TS, webpack/vite, componentes React/Vue
+  - **SDK Web Backend**: C#/Python/Node, APIs REST, middleware
+  - **SDK Mobile**: Kotlin/Swift, SDKs nativos
+- El pipeline se configura por tipo de SDK (ver seccion 11)
+- Los agentes base (Analyzer, Orchestrator, RuleValidator) son reutilizables
+- Los agentes especificos (ApiGenerator, Compilation) se especializan por lenguaje
+- La estructura de carpetas (_api, _drivers, _hal, etc.) se mantiene como convencion

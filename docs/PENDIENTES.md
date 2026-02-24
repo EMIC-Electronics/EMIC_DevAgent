@@ -102,7 +102,19 @@ luego parsear la posicion del error y buscar la marca mas cercana.
   - Incluye Data tab con variables de prueba
   - Sigue el patron del tutorial TUTORIAL_YOGURTERA_CONTROLLER.md
 
-### 10. Retrocompatibilidad en capas inferiores
+### 10. Pipeline configurable y extensibilidad multi-SDK
+
+**Prioridad: Media** — Deseable para extensibilidad, pero sin sobrediseñar.
+
+- [ ] Evaluar que parametros del pipeline conviene externalizar a JSON (habilitar/deshabilitar agentes, maxRetries, etc.)
+- [ ] Implementar configuracion basica donde aporte valor real, evitando abstracciones innecesarias
+- [ ] Preparar estructura para que en el futuro se puedan agregar pipelines para otros SDKs (Web, backend, mobile)
+
+**Contexto**: Es deseable que los pipelines sean reconfigurables, pero hay que equilibrar complejidad vs modularidad.
+Si un cambio es infrecuente, es aceptable que requiera modificar codigo. En el futuro se agregaran pipelines
+para otros tipos de SDK que mantienen la misma estructura de carpetas pero cambian lenguaje y toolchain.
+
+### 11. Retrocompatibilidad en capas inferiores
 
 **Prioridad: Alta** — Regla transversal que afecta a ApiGenerator, DriverGenerator, y validadores.
 
@@ -126,8 +138,9 @@ luego parsear la posicion del error y buscar la marca mas cercana.
 | Retropropagacion | 3 | Diseño nuevo + TreeMaker |
 | Conversion versiones | 3 | Definicion de reglas |
 | Test modules/projects | 2 | ModuleGenerator + APIs del servidor |
+| Pipeline configurable | 3 | Evaluacion + config basica |
 | Retrocompatibilidad | 4 | Validadores + Generators |
-| **Total** | **35** | |
+| **Total** | **38** | |
 
 ---
 
@@ -135,13 +148,15 @@ luego parsear la posicion del error y buscar la marca mas cercana.
 
 1. **LLM** — sin esto los agentes no pueden generar codigo
 2. **Compilacion** — wrapper liviano sobre EMIC.Shared
-3. **Retropropagacion** — diseño del sistema de marcado (necesario antes de CompilationAgent)
-4. **Templates** — patrones parametrizados basados en archivos reales del SDK
-5. **Validadores** — reglas EMIC incluyendo retrocompatibilidad
-6. **Agentes** — orquestacion completa (requiere todo lo anterior)
-7. **Test modules/projects** — extension de ModuleGenerator + ProjectCreator
-8. **Conversion de versiones** — agente especializado
-9. **Pipeline + testing E2E** — prompt -> codigo -> compilacion -> correccion
+3. **Pipeline configurable** — esquema JSON + loader (base para todo lo demas)
+4. **Retropropagacion** — diseño del sistema de marcado (necesario antes de CompilationAgent)
+5. **Templates** — patrones parametrizados basados en archivos reales del SDK
+6. **Validadores** — reglas EMIC incluyendo retrocompatibilidad
+7. **Agentes** — orquestacion completa (requiere todo lo anterior)
+8. **Test modules/projects** — extension de ModuleGenerator + ProjectCreator
+9. **Conversion de versiones** — agente especializado
+10. **Pipeline + testing E2E** — prompt -> codigo -> compilacion -> correccion
+11. **Extensibilidad multi-SDK** — pipelines para Web, backend, mobile
 
 ---
 
