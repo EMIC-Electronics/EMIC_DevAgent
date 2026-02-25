@@ -52,8 +52,8 @@ REPORTE FINAL AL USUARIO
 | **DriverGeneratorAgent** | Genera drivers para chips externos (.emic, .h, .c) usando HAL |
 | **ModuleGeneratorAgent** | Genera generate.emic, deploy.emic, m_description.json para modulos completos |
 | **ProgramXmlAgent** | Genera program.xml y archivos asociados para la logica de integracion |
-| **CompilationAgent** | Compila con XC16, parsea errores, retropropaga correcciones |
-| **RuleValidatorAgent** | Delega a 4 validadores especializados |
+| **CompilationAgent** | Compila con XC16, parsea errores, resuelve ubicacion original via .map files (⚠️ SourceMapper con `// @source:` markers es obsoleto, pendiente migrar a .map TSV) |
+| **RuleValidatorAgent** | Delega a 5 validadores especializados |
 
 ## Validadores Especializados
 
@@ -63,6 +63,7 @@ REPORTE FINAL AL USUARIO
 | **NonBlockingValidator** | No hay while() bloqueantes ni __delay_ms() en APIs. Usa getSystemMilis() + state machines |
 | **StateMachineValidator** | Operaciones complejas usan patron switch(state) con variable estatica y timeouts |
 | **DependencyValidator** | Todo EMIC:setInput referencia archivos existentes, no hay dependencias circulares |
+| **BackwardsCompatibilityValidator** | Verifica EMIC:ifdef/#ifdef guards en .emic/.h/.c para funcionalidad nueva. Core functions (init, poll) se excluyen |
 
 ## Separacion Core/CLI
 
@@ -138,7 +139,9 @@ EMIC_DevAgent/
         EMIC_Conceptos_Clave.md          # Conceptos clave del SDK EMIC
         architecture.md                   # Este archivo
         ESTADO_ACTUAL.md                  # Estado actual del proyecto
-        MEJORAS_Y_SERVICIOS_COMPARTIDOS.md  # Analisis de servicios compartidos
+        PENDIENTES.md                     # Tareas pendientes de implementacion
+        WORKFLOW.md                       # Reglas de workflow del agente
+        MEJORAS_Y_SERVICIOS_COMPARTIDOS.md  # Analisis de servicios compartidos (historico)
     src/
         EMIC_DevAgent.Cli/               # Punto de entrada CLI
             Program.cs                   # Entry point (usa AddEmicDevAgent + registros CLI)

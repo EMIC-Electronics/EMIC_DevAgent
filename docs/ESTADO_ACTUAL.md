@@ -23,9 +23,10 @@ EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar cod
 - Templates: ApiTemplate, DriverTemplate, ModuleTemplate + TemplateEngineService
 - Validators: LayerSeparation, NonBlocking, StateMachine, Dependency, BackwardsCompatibility
 - Compilation: EmicCompilationService wrapper sobre EMIC.Shared + CompilationErrorParser
-- SourceMapper: retropropagacion de errores del codigo expandido al fuente SDK original
+- Retropropagacion de errores: implementada en EMIC.Shared via archivos `.map` TSV generados por TreeMaker (⚠️ SourceMapper del DevAgent usa estrategia obsoleta `// @source:` markers, pendiente migrar a .map)
 
 **Pendiente de mejora:**
+- Migrar SourceMapper a usar archivos `.map` TSV (eliminar `// @source:` markers)
 - Retrocompatibilidad automatica en generators (ApiGenerator, DriverGenerator)
 - Generacion de modulos/proyectos de test
 - Pipeline configurable via JSON
@@ -158,7 +159,7 @@ EMIC_DevAgent/
                     ICompilationService.cs
                     EmicCompilationService.cs # ✅ EMIC.Shared BuildService wrapper
                     CompilationErrorParser.cs # ✅ GCC/XC16 output parsing
-                    SourceMapper.cs           # ✅ @source marker insertion + error backtracking
+                    SourceMapper.cs           # ⚠️ Estrategia obsoleta (// @source: markers), pendiente migrar a .map TSV
                 Validation/
                     ValidationService.cs      # ✅ Sequential validator orchestration
                     ValidationResult.cs

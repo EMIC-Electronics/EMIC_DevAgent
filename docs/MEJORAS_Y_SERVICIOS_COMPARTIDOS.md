@@ -1,6 +1,11 @@
 # EMIC DevAgent - Mejoras, Cambios y Servicios Compartidos con EMIC.Shared
 
-> Fecha: Febrero 2026 (actualizado post-Fase 0)
+> **⚠️ DOCUMENTO HISTORICO** — Este analisis se realizo durante la planificacion (pre-Fase 0.5).
+> Todas las recomendaciones de integracion con EMIC.Shared fueron ejecutadas en las Fases 0-5.
+> Se conserva como referencia arquitectonica del _porqué_ de las decisiones de diseño.
+> Para el estado actual, ver `ESTADO_ACTUAL.md` y `PENDIENTES.md`.
+
+> Fecha: Febrero 2026 (analisis original pre-Fase 0.5)
 > Autor: Analisis automatizado Claude Code
 > Objetivo: Identificar servicios de EMIC.Shared reutilizables y recomendar mejoras arquitectonicas
 
@@ -826,28 +831,29 @@ EMIC_DevAgent.Cli
 - [x] Actualizar Program.cs del CLI para usar scope + extension method
 - [x] Agregar `IUserInteraction` como dependencia de `OrchestratorAgent`
 
-### Fase 0.5: Integracion con EMIC.Shared
-- [ ] Agregar `<ProjectReference>` a EMIC.Shared en EMIC_DevAgent.Core.csproj
-- [ ] Registrar `MediaAccess` en DI (via IAgentSession)
-- [ ] Implementar `SdkPathResolver.ResolveVolume()` delegando a `MediaAccess.EmicPath()`
-- [ ] Convertir `EmicFileParser` en adapter sobre `TreeMaker`
-- [ ] Implementar `SdkScanner` delegando a `DiscoveryService` + `Repositories`
-- [ ] Implementar `MetadataService` usando `MediaAccess.ReadJsonAsync/WriteJsonAsync`
-- [ ] Crear `DevAgentLlmService` reutilizando infra de `ClaudeAiService`
-- [ ] Implementar `LlmPromptBuilder.Build()` con system prompts por agente
-- [ ] Implementar `GenerateStructuredAsync<T>()` (JSON mode)
-- [ ] Crear wrapper de `CompilerService` para `ICompilationService`
-- [ ] Delegar `CompilationErrorParser.Parse()` a `CompilerService.ParseCompilerOutput()`
-- [ ] Implementar 4 validadores (logica nueva)
-- [ ] Implementar `ValidationService.ValidateAllAsync()`
-- [ ] Implementar templates usando archivos reales del SDK via `MediaAccess`
-- [ ] Implementar agentes (logica nueva)
-- [ ] Implementar `OrchestrationPipeline.ExecuteAsync()`
-- [ ] Agregar `appsettings.json` con configuracion por defecto
-- [ ] Unificar versiones de paquetes NuGet
-- [ ] Tests de integracion con SDK real
-- [ ] Crear `appsettings.Development.json` (en .gitignore) para API key
+### Fase 0.5: Integracion con EMIC.Shared ✅ COMPLETADO (Fases 0.5-5)
+- [x] Agregar `<ProjectReference>` a EMIC.Shared en EMIC_DevAgent.Core.csproj
+- [x] Registrar `MediaAccess` en DI (via IAgentSession)
+- [x] Implementar `SdkPathResolver.ResolveVolume()` delegando a `MediaAccess.EmicPath()`
+- [x] Convertir `EmicFileParser` en adapter sobre `TreeMaker`
+- [x] Implementar `SdkScanner` delegando a `DiscoveryService` + `Repositories`
+- [x] Implementar `MetadataService` usando `MediaAccess.ReadJsonAsync/WriteJsonAsync`
+- [x] Crear `ClaudeLlmService` con Anthropic API (GenerateAsync, GenerateWithContext, GenerateStructured)
+- [x] Implementar `LlmPromptBuilder.Build()` con system prompts por agente
+- [x] Implementar `GenerateStructuredAsync<T>()` (JSON mode)
+- [x] Crear `EmicCompilationService` wrapper sobre EMIC.Shared BuildService
+- [x] Implementar `CompilationErrorParser.Parse()` (GCC/XC16 output parsing)
+- [x] Implementar 5 validadores (Layer, NonBlocking, StateMachine, Dependency, BackwardsCompatibility)
+- [x] Implementar `ValidationService.ValidateAllAsync()`
+- [x] Implementar templates usando archivos reales del SDK via `MediaAccess`
+- [x] Implementar 8 agentes (Orchestrator, Analyzer, ApiGenerator, DriverGenerator, ModuleGenerator, ProgramXml, Compilation, RuleValidator)
+- [x] Implementar `OrchestrationPipeline.ExecuteAsync()`
+- [x] Agregar `appsettings.json` con configuracion por defecto
+- [ ] Unificar versiones de paquetes NuGet (pendiente)
+- [ ] Tests de integracion con SDK real (pendiente)
+- [ ] Crear `appsettings.Development.json` (en .gitignore) para API key (pendiente)
 
 ---
 
-*Este documento debe revisarse cada vez que se implemente una fase para actualizar el estado de las recomendaciones.*
+*Documento historico — todas las fases de implementacion fueron completadas (ver ESTADO_ACTUAL.md).*
+*Ultima actualizacion: 2026-02-25*
