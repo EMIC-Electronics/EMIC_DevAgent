@@ -318,6 +318,7 @@ public class OrchestratorAgent : AgentBase
                 "ModuleGenerator",
                 "ProgramXml",
                 "RuleValidator",
+                "Materializer",
                 "Compilation"
             },
             IntentType.CreateApi => new List<string>
@@ -325,6 +326,7 @@ public class OrchestratorAgent : AgentBase
                 "Analyzer",
                 "ApiGenerator",
                 "RuleValidator",
+                "Materializer",
                 "Compilation"
             },
             IntentType.CreateDriver => new List<string>
@@ -332,6 +334,7 @@ public class OrchestratorAgent : AgentBase
                 "Analyzer",
                 "DriverGenerator",
                 "RuleValidator",
+                "Materializer",
                 "Compilation"
             },
             _ => new List<string>

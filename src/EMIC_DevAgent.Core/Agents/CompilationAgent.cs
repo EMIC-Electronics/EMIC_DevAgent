@@ -53,6 +53,13 @@ public class CompilationAgent : AgentBase
             ? sp.ToString() ?? string.Empty
             : string.Empty;
 
+        if (string.IsNullOrEmpty(projectPath))
+        {
+            Logger.LogError("ProjectPath not set in context — MaterializerAgent may not have run");
+            return AgentResult.Failure(Name,
+                "ProjectPath not set. Ensure MaterializerAgent runs before CompilationAgent to write files and set paths.");
+        }
+
         Logger.LogInformation("Starting compilation (max {MaxRetries} attempts) for path: {Path}",
             maxRetries, projectPath);
 

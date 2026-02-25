@@ -63,6 +63,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProgramXmlAgent>();
         services.AddScoped<CompilationAgent>();
         services.AddScoped<RuleValidatorAgent>();
+        services.AddScoped<MaterializerAgent>();
 
         // OrchestratorAgent with factory to resolve sub-agents
         services.AddScoped<OrchestratorAgent>(sp =>
@@ -75,7 +76,8 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ModuleGeneratorAgent>(),
                 sp.GetRequiredService<ProgramXmlAgent>(),
                 sp.GetRequiredService<CompilationAgent>(),
-                sp.GetRequiredService<RuleValidatorAgent>()
+                sp.GetRequiredService<RuleValidatorAgent>(),
+                sp.GetRequiredService<MaterializerAgent>()
             };
             return new OrchestratorAgent(
                 sp.GetRequiredService<ILlmService>(),
