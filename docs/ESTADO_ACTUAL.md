@@ -8,116 +8,66 @@
 
 ## Resumen Ejecutivo
 
-EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar codigo para el SDK EMIC a partir de prompts en lenguaje natural. La **estructura completa esta creada** con stubs, y la **Fase 0 (separacion Core/CLI)** esta completada: interfaces de abstraccion, DI centralizado, y implementaciones CLI.
+EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar codigo para el SDK EMIC a partir de prompts en lenguaje natural. **Todas las fases de implementacion core estan completadas** (Fases 0-4). El pipeline completo esta funcional: prompt → intent classification → disambiguation → SDK analysis → code generation → validation → compilation.
 
 **Lo que funciona hoy:**
-- `dotnet build` compila sin errores (0 warnings)
+- `dotnet build` compila sin errores (0 warnings en DevAgent)
 - `dotnet test` ejecuta 6 tests unitarios (todos pasan)
-- El CLI arranca, lee configuracion, muestra UI basica
+- El CLI arranca, lee configuracion, acepta prompts del usuario
+- Pipeline completo: OrchestratorAgent → AnalyzerAgent → Generators → Validators → Compilation
+- **Zero `NotImplementedException`** en todo el proyecto
 - Inyeccion de dependencias centralizada via `AddEmicDevAgent()` extension method
-- Todos los modelos de datos son funcionales
 - Separacion Core/CLI con interfaces: `IUserInteraction`, `IAgentSession`, `IAgentEventSink`
-- Implementaciones CLI: `ConsoleUserInteraction`, `CliAgentSession`, `ConsoleEventSink`
-- `NullAgentEventSink` como fallback no-op
-- Lifetimes correctos: Scoped para agentes/servicios con estado, Singleton para stateless
-- `OrchestratorAgent` recibe `IUserInteraction` (preparado para desambiguacion)
+- LLM: ClaudeLlmService con Anthropic API (GenerateAsync, GenerateWithContext, GenerateStructured)
+- SDK Scanner: escaneo real via MediaAccess (APIs, drivers, modulos, HAL)
+- Templates: ApiTemplate, DriverTemplate, ModuleTemplate + TemplateEngineService
+- Validators: LayerSeparation, NonBlocking, StateMachine, Dependency
+- Compilation: EmicCompilationService wrapper sobre EMIC.Shared + CompilationErrorParser
 
-**Lo que NO funciona aun:**
-- Ningun agente ejecuta logica real
-- No hay conexion con Claude API
-- No se escanea el SDK
-- No se genera codigo
-- No se compila con XC16
-- No se validan reglas
+**Pendiente de mejora:**
+- Sistema de retropropagacion de errores (TreeMaker → SDK source mapping)
+- Retrocompatibilidad automatica en generators
+- Generacion de modulos/proyectos de test
+- Pipeline configurable via JSON
+- Agente de conversion de versiones
 
 ---
 
-## Inventario de Archivos (57 archivos .cs)
+## Inventario de Archivos
 
 ### Estado por categoria
 
 | Categoria | Archivos | Implementados | Con Stubs |
 |-----------|----------|--------------|-----------|
 | Modelos de datos | 11 | 11 | 0 |
-| Configuracion | 5 | 5 | 0 |
+| Configuracion | 6 | 6 | 0 |
 | Interfaces (Core) | 9 | 9 | 0 |
 | Base framework | 4 | 4 | 0 |
 | CLI | 4 | 4 | 0 |
 | Tests | 1 | 1 | 0 |
-| Agentes | 8 | 0 | 8 |
-| Validadores | 4 | 0 | 4 |
-| Servicios | 10 | 0 | 10 |
-| Pipeline | 2 | 1 parcial | 1 |
-| **Total** | **58** | **35** | **22** |
+| Agentes | 8 | 8 | 0 |
+| Validadores | 5 | 5 | 0 |
+| Servicios LLM | 3 | 3 | 0 |
+| Servicios SDK | 4 | 4 | 0 |
+| Templates | 4 | 4 | 0 |
+| Metadata | 2 | 2 | 0 |
+| Compilacion | 3 | 3 | 0 |
+| Validacion | 2 | 2 | 0 |
+| Pipeline | 2 | 2 | 0 |
+| **Total** | **68** | **68** | **0** |
 
-### Archivos nuevos de Fase 0 (Core/CLI separation)
+---
 
-**Core - Interfaces:**
-- `Agents/Base/IUserInteraction.cs` - Interaccion bidireccional con usuario
-- `Agents/Base/IAgentEventSink.cs` - Eventos de progreso en tiempo real
-- `Configuration/IAgentSession.cs` - Contexto de sesion (email, SDK path)
+## Fases de Implementacion
 
-**Core - Implementaciones:**
-- `Configuration/ServiceCollectionExtensions.cs` - `AddEmicDevAgent()` extension method
-- `Configuration/NullAgentEventSink.cs` - Fallback no-op para IAgentEventSink
-
-**CLI - Implementaciones:**
-- `ConsoleUserInteraction.cs` - IUserInteraction via Console.ReadLine/WriteLine
-- `CliAgentSession.cs` - IAgentSession con valores fijos ("devagent@local")
-- `ConsoleEventSink.cs` - IAgentEventSink con Console.WriteLine
-
-### Detalle de stubs pendientes (todos lanzan NotImplementedException)
-
-**Agentes (8):**
-- `OrchestratorAgent.ExecuteCoreAsync()` - Orquestacion completa
-- `AnalyzerAgent.ExecuteCoreAsync()` - Escaneo del SDK
-- `ApiGeneratorAgent.ExecuteCoreAsync()` - Generacion de APIs
-- `DriverGeneratorAgent.ExecuteCoreAsync()` - Generacion de drivers
-- `ModuleGeneratorAgent.ExecuteCoreAsync()` - Generacion de modulos
-- `ProgramXmlAgent.ExecuteCoreAsync()` - Generacion de program.xml
-- `CompilationAgent.ExecuteCoreAsync()` - Compilacion con XC16
-- `RuleValidatorAgent.ExecuteCoreAsync()` - Delegacion a validadores
-
-**Validadores (4):**
-- `LayerSeparationValidator.ValidateAsync()` - Verifica separacion de capas
-- `NonBlockingValidator.ValidateAsync()` - Verifica no-blocking
-- `StateMachineValidator.ValidateAsync()` - Verifica state machines
-- `DependencyValidator.ValidateAsync()` - Verifica dependencias
-
-**Servicios LLM (3):**
-- `ClaudeLlmService.GenerateAsync()`
-- `ClaudeLlmService.GenerateWithContextAsync()`
-- `ClaudeLlmService.GenerateStructuredAsync<T>()`
-- `LlmPromptBuilder.Build()`
-
-**Servicios SDK (5):**
-- `SdkScanner.ScanAsync()` - Escanea todo el SDK
-- `SdkScanner.FindApiAsync()` - Busca API por nombre
-- `SdkScanner.FindDriverAsync()` - Busca driver por nombre
-- `SdkScanner.FindModuleAsync()` - Busca modulo por nombre
-- `SdkPathResolver.ResolveVolume()` - Resuelve DEV:/TARGET:/SYS:/USER:
-- `EmicFileParser.ParseApiEmicAsync()` - Parsea .emic de API
-- `EmicFileParser.ParseDriverEmicAsync()` - Parsea .emic de driver
-- `EmicFileParser.ExtractDependenciesAsync()` - Extrae dependencias
-
-**Templates (3):**
-- `ApiTemplate.GenerateAsync()`
-- `DriverTemplate.GenerateAsync()`
-- `ModuleTemplate.GenerateAsync()`
-
-**Metadata (3):**
-- `MetadataService.ReadMetadataAsync()`
-- `MetadataService.WriteMetadataAsync()`
-- `MetadataService.UpdateHistoryAsync()`
-
-**Compilacion (1):**
-- `CompilationErrorParser.Parse()`
-
-**Validacion (1):**
-- `ValidationService.ValidateAllAsync()`
-
-**Pipeline (1):**
-- `OrchestrationPipeline.ExecuteAsync()`
+| Fase | Descripcion | Archivos | Estado |
+|------|------------|----------|--------|
+| Fase 0 | Core/CLI separation, DI, interfaces | 8 | ✅ |
+| Fase 0.5 | EMIC.Shared integration (MediaAccess, TreeMaker, SdkScanner) | 6 | ✅ |
+| Fase 1 | ClaudeLlmService + EmicCompilationService + CompilationErrorParser | 3 | ✅ |
+| Fase 2 | 3 Templates + 4 Validators + ValidationService + RuleValidatorAgent | 9 | ✅ |
+| Fase 3 | 7 Agents + OrchestrationPipeline | 8 | ✅ |
+| Fase 4 | TemplateEngineService + CLI cleanup + docs update | 4 | ✅ |
 
 ---
 
@@ -130,87 +80,91 @@ EMIC_DevAgent/
     README.md
     promps.txt
     docs/
-        EMIC_Conceptos_Clave.md          # Conceptos del SDK EMIC
-        architecture.md                   # Diagrama de agentes + separacion Core/CLI
+        EMIC_Conceptos_Clave.md
+        architecture.md
         ESTADO_ACTUAL.md                  # ESTE ARCHIVO
-        MEJORAS_Y_SERVICIOS_COMPARTIDOS.md  # Analisis de servicios compartidos
+        PENDIENTES.md                     # Tareas pendientes
+        MEJORAS_Y_SERVICIOS_COMPARTIDOS.md
+        WORKFLOW.md
     src/
         EMIC_DevAgent.Cli/
-            Program.cs                    # Entry point (usa AddEmicDevAgent + registros CLI)
+            Program.cs                    # Entry point (pipeline E2E funcional)
             ConsoleUserInteraction.cs     # IUserInteraction via Console
             CliAgentSession.cs            # IAgentSession con valores fijos
             ConsoleEventSink.cs           # IAgentEventSink via Console
             EMIC_DevAgent.Cli.csproj
-            appsettings.json              # Configuracion
+            appsettings.json
         EMIC_DevAgent.Core/
             Agents/
                 Base/
-                    IAgent.cs             # Interfaz base de agentes
-                    AgentBase.cs          # Clase abstracta con logging
-                    AgentContext.cs       # Contexto compartido + enums
-                    AgentMessage.cs       # Mensajes inter-agente
-                    AgentResult.cs        # Resultado con factories
-                    IUserInteraction.cs   # Abstraccion interaccion usuario
-                    IAgentEventSink.cs    # Abstraccion eventos/progreso
-                OrchestratorAgent.cs      # STUB (recibe IUserInteraction)
-                AnalyzerAgent.cs          # STUB
-                ApiGeneratorAgent.cs      # STUB
-                DriverGeneratorAgent.cs   # STUB
-                ModuleGeneratorAgent.cs   # STUB
-                ProgramXmlAgent.cs        # STUB
-                CompilationAgent.cs       # STUB
-                RuleValidatorAgent.cs     # STUB
+                    IAgent.cs
+                    AgentBase.cs
+                    AgentContext.cs
+                    AgentMessage.cs
+                    AgentResult.cs
+                    IUserInteraction.cs
+                    IAgentEventSink.cs
+                OrchestratorAgent.cs      # ✅ Intent classification + disambiguation + agent sequencing
+                AnalyzerAgent.cs          # ✅ SDK scanning + gap analysis + interchangeability
+                ApiGeneratorAgent.cs      # ✅ LLM-enhanced API generation
+                DriverGeneratorAgent.cs   # ✅ LLM-enhanced driver generation
+                ModuleGeneratorAgent.cs   # ✅ Module generation with dependency wiring
+                ProgramXmlAgent.cs        # ✅ program.xml + userFncFile generation
+                CompilationAgent.cs       # ✅ Retry loop + backtracking + auto-fix
+                RuleValidatorAgent.cs     # ✅ Delegates to 4 validators
                 Validators/
-                    IValidator.cs         # Interfaz de validadores
-                    LayerSeparationValidator.cs  # STUB
-                    NonBlockingValidator.cs      # STUB
-                    StateMachineValidator.cs     # STUB
-                    DependencyValidator.cs       # STUB
+                    IValidator.cs
+                    LayerSeparationValidator.cs  # ✅ HW register detection in API layer
+                    NonBlockingValidator.cs      # ✅ 3 rules: delay, infinite loop, blocking while
+                    StateMachineValidator.cs     # ✅ Function analysis + state variable check
+                    DependencyValidator.cs       # ✅ setInput validation + DFS cycle detection
             Orchestration/
-                OrchestrationPipeline.cs  # STUB (AddStep implementado)
-                PipelineStep.cs           # Modelo implementado
+                OrchestrationPipeline.cs  # ✅ Sequential execution with conditions
+                PipelineStep.cs
             Models/
                 Sdk/
-                    SdkInventory.cs       # Inventario completo del SDK
-                    ApiDefinition.cs      # Definicion de API
-                    DriverDefinition.cs   # Definicion de driver
-                    ModuleDefinition.cs   # Definicion de modulo
+                    SdkInventory.cs
+                    ApiDefinition.cs
+                    DriverDefinition.cs
+                    ModuleDefinition.cs
                 Metadata/
-                    FolderMetadata.cs     # Modelo .emic-meta.json
-                    ComponentRelationship.cs  # Relaciones entre componentes
+                    FolderMetadata.cs
+                    ComponentRelationship.cs
                 Generation/
-                    GeneratedFile.cs      # Archivo generado
-                    GenerationPlan.cs     # Plan de generacion
+                    GeneratedFile.cs
+                    GenerationPlan.cs
             Services/
                 Llm/
-                    ILlmService.cs        # Interfaz LLM
-                    ClaudeLlmService.cs   # STUB
-                    LlmPromptBuilder.cs   # STUB (Build)
+                    ILlmService.cs
+                    ClaudeLlmService.cs       # ✅ Anthropic API integration
+                    LlmPromptBuilder.cs       # ✅ System prompt building
                 Sdk/
-                    ISdkScanner.cs        # Interfaz scanner
-                    SdkScanner.cs         # STUB
-                    SdkPathResolver.cs    # Parcialmente implementado
-                    EmicFileParser.cs     # STUB
+                    ISdkScanner.cs
+                    SdkScanner.cs             # ✅ MediaAccess-based SDK scanning
+                    SdkPathResolver.cs        # ✅ Volume resolution
+                    EmicFileParser.cs         # ✅ TreeMaker Discovery mode
                 Templates/
-                    ITemplateEngine.cs    # Interfaz template engine
-                    ApiTemplate.cs        # STUB
-                    DriverTemplate.cs     # STUB
-                    ModuleTemplate.cs     # STUB
+                    ITemplateEngine.cs
+                    TemplateEngineService.cs  # ✅ Delegates to specialized templates
+                    ApiTemplate.cs            # ✅ .emic/.h/.c generation
+                    DriverTemplate.cs         # ✅ .emic/.h/.c generation
+                    ModuleTemplate.cs         # ✅ generate.emic/deploy.emic/m_description.json
                 Metadata/
-                    IMetadataService.cs   # Interfaz metadata
-                    MetadataService.cs    # STUB
+                    IMetadataService.cs
+                    MetadataService.cs        # ✅ .emic-meta.json read/write
                 Compilation/
-                    ICompilationService.cs   # Interfaz compilacion
-                    CompilationErrorParser.cs  # STUB
+                    ICompilationService.cs
+                    EmicCompilationService.cs # ✅ EMIC.Shared BuildService wrapper
+                    CompilationErrorParser.cs # ✅ GCC/XC16 output parsing
                 Validation/
-                    ValidationService.cs  # STUB
-                    ValidationResult.cs   # Modelo implementado
+                    ValidationService.cs      # ✅ Sequential validator orchestration
+                    ValidationResult.cs
             Configuration/
-                EmicAgentConfig.cs        # Config principal
-                SdkPaths.cs              # Rutas del SDK
-                IAgentSession.cs          # Abstraccion sesion usuario/SDK
-                ServiceCollectionExtensions.cs  # AddEmicDevAgent() extension
-                NullAgentEventSink.cs     # Fallback no-op IAgentEventSink
+                EmicAgentConfig.cs
+                SdkPaths.cs
+                IAgentSession.cs
+                ServiceCollectionExtensions.cs  # ✅ AddEmicDevAgent() with all registrations
+                NullAgentEventSink.cs
     tests/
         EMIC_DevAgent.Tests/
             EMIC_DevAgent.Tests.csproj
@@ -219,29 +173,7 @@ EMIC_DevAgent/
 
 ---
 
-## Dependencias NuGet
-
-### EMIC_DevAgent.Cli
-- `Microsoft.Extensions.Configuration` 8.0.0
-- `Microsoft.Extensions.Configuration.Json` 8.0.1
-- `Microsoft.Extensions.DependencyInjection` 8.0.1
-- `Microsoft.Extensions.Hosting` 8.0.1
-
-### EMIC_DevAgent.Core
-- `Microsoft.Extensions.Configuration.Abstractions` 8.0.0
-- `Microsoft.Extensions.DependencyInjection.Abstractions` 8.0.2
-- `Microsoft.Extensions.Logging.Abstractions` 8.0.2
-
-### EMIC_DevAgent.Tests
-- `Microsoft.NET.Test.Sdk` 17.11.1
-- `xunit` 2.9.2
-- `xunit.runner.visualstudio` 2.8.2
-
----
-
 ## Archivos de Referencia del SDK
-
-Estos archivos del SDK EMIC son los patrones canonicos que los agentes deben seguir:
 
 | Archivo | Tipo | Ubicacion en SDK |
 |---------|------|-----------------|

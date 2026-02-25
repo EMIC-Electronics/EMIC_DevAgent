@@ -3,7 +3,6 @@ using EMIC_DevAgent.Core.Agents.Base;
 using EMIC_DevAgent.Core.Configuration;
 using EMIC_DevAgent.Core.Services.Compilation;
 using EMIC_DevAgent.Core.Services.Llm;
-using EMIC_DevAgent.Core.Services.Templates;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -26,7 +25,7 @@ public class Program
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
 
-        // Core services
+        // Core services (includes ITemplateEngine registration)
         services.AddEmicDevAgent(config);
 
         // CLI-specific: host-provided implementations
@@ -39,16 +38,12 @@ public class Program
         // Compilation service
         services.AddScoped<ICompilationService, EmicCompilationService>();
 
-        // Stubs pendientes de implementacion
-        services.AddSingleton<ITemplateEngine>(sp =>
-            throw new NotImplementedException("ITemplateEngine pendiente de implementacion"));
-
         var provider = services.BuildServiceProvider();
 
         var logger = provider.GetRequiredService<ILogger<Program>>();
-        logger.LogInformation("EMIC DevAgent v0.1.0 - Agente de IA para desarrollo SDK EMIC");
+        logger.LogInformation("EMIC DevAgent v0.2.0 - Agente de IA para desarrollo SDK EMIC");
 
-        Console.WriteLine("EMIC DevAgent v0.1.0");
+        Console.WriteLine("EMIC DevAgent v0.2.0");
         Console.WriteLine("====================");
         Console.WriteLine("Agente de IA para desarrollo SDK EMIC");
         Console.WriteLine();
@@ -75,19 +70,39 @@ public class Program
 
         using var scope = provider.CreateScope();
         var orchestrator = scope.ServiceProvider.GetRequiredService<OrchestratorAgent>();
-        var context = new AgentContext { OriginalPrompt = prompt };
+        var context = new AgentContext
+        {
+            OriginalPrompt = prompt
+        };
+        context.Properties["SdkPath"] = config.SdkPath;
 
-        try
+        var result = await orchestrator.ExecuteAsync(context);
+
+        Console.WriteLine();
+        Console.WriteLine($"Resultado: {result.Status}");
+        Console.WriteLine($"Mensaje: {result.Message}");
+
+        if (context.GeneratedFiles.Count > 0)
         {
-            var result = await orchestrator.ExecuteAsync(context);
             Console.WriteLine();
-            Console.WriteLine($"Resultado: {result.Status}");
-            Console.WriteLine($"Mensaje: {result.Message}");
+            Console.WriteLine($"Archivos generados ({context.GeneratedFiles.Count}):");
+            foreach (var file in context.GeneratedFiles)
+                Console.WriteLine($"  - {file.RelativePath} ({file.Type})");
         }
-        catch (NotImplementedException)
+
+        if (context.ValidationResults.Count > 0)
         {
-            Console.WriteLine();
-            Console.WriteLine("Los agentes aun no estan implementados. Estructura creada correctamente.");
+            var totalIssues = context.ValidationResults.Sum(v => v.Issues.Count);
+            if (totalIssues > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Validacion: {totalIssues} issues");
+                foreach (var vr in context.ValidationResults)
+                {
+                    foreach (var issue in vr.Issues)
+                        Console.WriteLine($"  [{issue.Severity}] {issue.FilePath}:{issue.Line} - {issue.Message}");
+                }
+            }
         }
     }
 }

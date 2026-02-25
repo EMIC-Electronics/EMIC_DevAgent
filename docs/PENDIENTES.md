@@ -6,69 +6,74 @@
 |------|------------|--------|
 | **Fase 0** | Separacion Core/CLI, interfaces de abstraccion, DI | Completado |
 | **Fase 0.5** | Integracion EMIC.Shared (MediaAccess, TreeMaker, SdkScanner, MetadataService) | Completado |
+| **Fase 1** | Servicios LLM (ClaudeLlmService) + Compilacion (EmicCompilationService, CompilationErrorParser) | Completado |
+| **Fase 2** | Templates (Api, Driver, Module) + Validadores (4) + ValidationService + RuleValidatorAgent | Completado |
+| **Fase 3** | Agentes (7) + OrchestrationPipeline — orquestacion completa | Completado |
+| **Fase 4** | ITemplateEngine impl + CLI cleanup — zero stubs, pipeline E2E listo | Completado |
 
 ---
 
-## Pendientes por categoria
+## Completados por categoria
 
-### 1. Servicios LLM (4 stubs)
+### 1. Servicios LLM (4/4) ✅
 
-- [ ] `ClaudeLlmService.GenerateAsync()` — llamada a Claude API
-- [ ] `ClaudeLlmService.GenerateWithContextAsync()` — generacion con contexto
-- [ ] `ClaudeLlmService.GenerateStructuredAsync<T>()` — respuestas JSON tipadas
-- [ ] `LlmPromptBuilder.Build()` — system prompts especializados por tipo de agente
+- [x] `ClaudeLlmService.GenerateAsync()` — llamada a Claude API
+- [x] `ClaudeLlmService.GenerateWithContextAsync()` — generacion con contexto
+- [x] `ClaudeLlmService.GenerateStructuredAsync<T>()` — respuestas JSON tipadas
+- [x] `LlmPromptBuilder.Build()` — system prompts especializados por tipo de agente
 
-**Archivos:** `Core/Services/Llm/ClaudeLlmService.cs`, `Core/Services/Llm/LlmPromptBuilder.cs`
+### 2. Compilacion (2/2) ✅
 
-### 2. Compilacion (2 stubs)
+- [x] `EmicCompilationService` — wrapper sobre CompilerService de EMIC.Shared (XC16)
+- [x] `CompilationErrorParser.Parse()` — parsear output del compilador a errores estructurados
 
-- [ ] `ICompilationService` — wrapper sobre CompilerService de EMIC.Shared (XC16)
-- [ ] `CompilationErrorParser.Parse()` — parsear output del compilador a errores estructurados
+### 3. Templates (4/4) ✅
 
-**Archivos:** `Cli/Program.cs` (factory stub), `Core/Services/Compilation/CompilationErrorParser.cs`
+- [x] `ApiTemplate.GenerateAsync()` — genera .emic/.h/.c para APIs
+- [x] `DriverTemplate.GenerateAsync()` — genera archivos de driver
+- [x] `ModuleTemplate.GenerateAsync()` — genera generate.emic, deploy.emic, m_description.json
+- [x] `TemplateEngineService` — ITemplateEngine que delega a los 3 templates especializados
 
-### 3. Templates (3 stubs)
+### 4. Validadores (5/5) ✅
 
-- [ ] `ApiTemplate.GenerateAsync()` — genera .emic/.h/.c para APIs
-- [ ] `DriverTemplate.GenerateAsync()` — genera archivos de driver
-- [ ] `ModuleTemplate.GenerateAsync()` — genera generate.emic, deploy.emic, m_description.json
+- [x] `LayerSeparationValidator` — APIs no acceden a TRIS/LAT/PORT directamente
+- [x] `NonBlockingValidator` — detecta while bloqueantes y `__delay_ms()`
+- [x] `StateMachineValidator` — verifica patron switch(state) con variables static y timeouts
+- [x] `DependencyValidator` — verifica que EMIC:setInput apunte a archivos existentes, sin ciclos
+- [x] `ValidationService.ValidateAllAsync()` — orquesta los 4 validadores y combina resultados
 
-**Archivos:** `Core/Services/Templates/ApiTemplate.cs`, `DriverTemplate.cs`, `ModuleTemplate.cs`
+### 5. Agentes (8/8) ✅
 
-### 4. Validadores (5 stubs)
+- [x] **OrchestratorAgent** — clasifica intent, desambigua via IUserInteraction, coordina workflow top-down/bottom-up
+- [x] **AnalyzerAgent** — escanea SDK, encuentra componentes reutilizables, identifica gaps, verifica intercambiabilidad de drivers
+- [x] **ApiGeneratorAgent** — genera APIs nuevas con LLM + patrones HAL, EMIC:ifdef guards
+- [x] **DriverGeneratorAgent** — genera drivers con LLM, patron ADS1231, funciones intercambiables
+- [x] **ModuleGeneratorAgent** — genera modulos completos propagando opciones top-down
+- [x] **ProgramXmlAgent** — genera program.xml y userFncFile desde funciones extraidas
+- [x] **CompilationAgent** — invoca compilador, retry loop, backtracking basico, auto-fix includes
+- [x] **RuleValidatorAgent** — delega a los 4 validadores especializados
 
-- [ ] `LayerSeparationValidator` — APIs no acceden a TRIS/LAT/PORT directamente
-- [ ] `NonBlockingValidator` — detecta while bloqueantes y `__delay_ms()`
-- [ ] `StateMachineValidator` — verifica patron switch(state) con variables static y timeouts
-- [ ] `DependencyValidator` — verifica que EMIC:setInput apunte a archivos existentes, sin ciclos
-- [ ] `ValidationService.ValidateAllAsync()` — orquesta los 4 validadores y combina resultados
+### 6. Pipeline (1/1) ✅
 
-**Archivos:** `Core/Agents/Validators/`, `Core/Services/Validation/ValidationService.cs`
+- [x] `OrchestrationPipeline.ExecuteAsync()` — ejecuta pasos registrados en secuencia con condiciones y status tracking
 
-### 5. Agentes (8 stubs existentes)
+### 7. SDK Services (ya implementados en Fase 0.5) ✅
 
-- [ ] **OrchestratorAgent** — clasifica intent, desambigua via IUserInteraction, coordina workflow top-down/bottom-up
-- [ ] **AnalyzerAgent** — escanea SDK, encuentra componentes reutilizables, identifica gaps, verifica intercambiabilidad de drivers
-- [ ] **ApiGeneratorAgent** — genera APIs nuevas respetando naming conventions (funciones intercambiables entre drivers)
-- [ ] **DriverGeneratorAgent** — genera drivers con retrocompatibilidad (parametros condicionales para features nuevos)
-- [ ] **ModuleGeneratorAgent** — genera modulos completos propagando opciones top-down
-- [ ] **ProgramXmlAgent** — genera program.xml y archivos asociados para logica de integradores
-- [ ] **CompilationAgent** — invoca compilador, parsea errores, retropropaga correcciones al SDK (max 5 retries)
-- [ ] **RuleValidatorAgent** — delega a los 4 validadores especializados
+- [x] `SdkScanner` — escanea _api, _drivers, _modules, _hal via MediaAccess
+- [x] `SdkPathResolver` — resuelve volumenes virtuales
+- [x] `EmicFileParser` — parsea .emic con TreeMaker modo Discovery
+- [x] `MetadataService` — lee/escribe .emic-meta.json
 
-**Archivos:** `Core/Agents/`
+### 8. CLI (Fase 4) ✅
 
-### 6. Pipeline (1 stub)
-
-- [ ] `OrchestrationPipeline.ExecuteAsync()` — ejecuta pasos registrados en secuencia
-
-**Archivos:** `Core/Agents/Base/OrchestrationPipeline.cs`
+- [x] `Program.cs` — limpio, sin stubs, con output de archivos generados y validacion
+- [x] `ITemplateEngine` registrado en DI via `TemplateEngineService`
 
 ---
 
-## Tareas nuevas (identificadas en revision de workflow)
+## Pendientes por implementar
 
-### 7. Sistema de retropropagacion de errores
+### 9. Sistema de retropropagacion de errores
 
 **Prioridad: Alta** — Sin esto, el CompilationAgent no puede corregir errores eficientemente.
 
@@ -82,7 +87,7 @@ El agente necesita saber que archivo .emic/.c/.h del SDK genero la linea con err
 **Posible enfoque**: Insertar comentarios `// @source: DEV:_api/xxx/yyy.c:42` en el codigo generado,
 luego parsear la posicion del error y buscar la marca mas cercana.
 
-### 8. Agente de conversion de versiones
+### 10. Agente de conversion de versiones
 
 **Prioridad: Media** — Necesario para migrar SDKs legacy.
 
@@ -90,7 +95,7 @@ luego parsear la posicion del error y buscar la marca mas cercana.
 - [ ] Diseñar reglas de conversion (rename funciones, actualizar parametros, adaptar patrones)
 - [ ] Implementar como agente nuevo o como modo del AnalyzerAgent
 
-### 9. Generacion de modulos y proyectos de test
+### 11. Generacion de modulos y proyectos de test
 
 **Prioridad: Media** — Necesario para verificacion fisica.
 
@@ -102,7 +107,7 @@ luego parsear la posicion del error y buscar la marca mas cercana.
   - Incluye Data tab con variables de prueba
   - Sigue el patron del tutorial TUTORIAL_YOGURTERA_CONTROLLER.md
 
-### 10. Pipeline configurable y extensibilidad multi-SDK
+### 12. Pipeline configurable y extensibilidad multi-SDK
 
 **Prioridad: Media** — Deseable para extensibilidad, pero sin sobrediseñar.
 
@@ -110,11 +115,7 @@ luego parsear la posicion del error y buscar la marca mas cercana.
 - [ ] Implementar configuracion basica donde aporte valor real, evitando abstracciones innecesarias
 - [ ] Preparar estructura para que en el futuro se puedan agregar pipelines para otros SDKs (Web, backend, mobile)
 
-**Contexto**: Es deseable que los pipelines sean reconfigurables, pero hay que equilibrar complejidad vs modularidad.
-Si un cambio es infrecuente, es aceptable que requiera modificar codigo. En el futuro se agregaran pipelines
-para otros tipos de SDK que mantienen la misma estructura de carpetas pero cambian lenguaje y toolchain.
-
-### 11. Retrocompatibilidad en capas inferiores
+### 13. Retrocompatibilidad en capas inferiores
 
 **Prioridad: Alta** — Regla transversal que afecta a ApiGenerator, DriverGenerator, y validadores.
 
@@ -127,36 +128,33 @@ para otros tipos de SDK que mantienen la misma estructura de carpetas pero cambi
 
 ## Resumen numerico
 
-| Categoria | Items | Depende de |
-|-----------|:-----:|------------|
-| LLM | 4 | Claude API + prompts nuevos |
-| Compilacion | 2 | Wrapper sobre EMIC.Shared |
-| Templates | 3 | Implementacion nueva + patrones del SDK |
-| Validadores | 5 | Implementacion nueva (analisis de codigo C) |
-| Agentes | 8 | Todo lo anterior + LLM |
-| Pipeline | 1 | Agentes |
-| Retropropagacion | 3 | Diseño nuevo + TreeMaker |
-| Conversion versiones | 3 | Definicion de reglas |
-| Test modules/projects | 2 | ModuleGenerator + APIs del servidor |
-| Pipeline configurable | 3 | Evaluacion + config basica |
-| Retrocompatibilidad | 4 | Validadores + Generators |
-| **Total** | **38** | |
+| Categoria | Items | Estado |
+|-----------|:-----:|--------|
+| LLM | 4 | ✅ Completado |
+| Compilacion | 2 | ✅ Completado |
+| Templates | 4 | ✅ Completado |
+| Validadores | 5 | ✅ Completado |
+| Agentes | 8 | ✅ Completado |
+| Pipeline | 1 | ✅ Completado |
+| SDK Services | 4 | ✅ Completado |
+| CLI cleanup | 2 | ✅ Completado |
+| Retropropagacion | 3 | Pendiente |
+| Conversion versiones | 3 | Pendiente |
+| Test modules/projects | 2 | Pendiente |
+| Pipeline configurable | 3 | Pendiente |
+| Retrocompatibilidad | 4 | Pendiente |
+| **Total** | **45** | **30 completados / 15 pendientes** |
 
 ---
 
-## Orden sugerido de implementacion
+## Orden sugerido para pendientes restantes
 
-1. **LLM** — sin esto los agentes no pueden generar codigo
-2. **Compilacion** — wrapper liviano sobre EMIC.Shared
-3. **Pipeline configurable** — esquema JSON + loader (base para todo lo demas)
-4. **Retropropagacion** — diseño del sistema de marcado (necesario antes de CompilationAgent)
-5. **Templates** — patrones parametrizados basados en archivos reales del SDK
-6. **Validadores** — reglas EMIC incluyendo retrocompatibilidad
-7. **Agentes** — orquestacion completa (requiere todo lo anterior)
-8. **Test modules/projects** — extension de ModuleGenerator + ProjectCreator
-9. **Conversion de versiones** — agente especializado
-10. **Pipeline + testing E2E** — prompt -> codigo -> compilacion -> correccion
-11. **Extensibilidad multi-SDK** — pipelines para Web, backend, mobile
+1. **Retropropagacion** — diseño del sistema de marcado (necesario antes de mejorar CompilationAgent)
+2. **Retrocompatibilidad** — reglas transversales en generators + validators
+3. **Test modules/projects** — extension de ModuleGenerator + ProjectCreator
+4. **Pipeline configurable** — esquema JSON + loader
+5. **Conversion de versiones** — agente especializado
+6. **Testing E2E** — prompt -> codigo -> compilacion -> correccion
 
 ---
 

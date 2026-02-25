@@ -31,6 +31,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ApiTemplate>();
         services.AddSingleton<DriverTemplate>();
         services.AddSingleton<ModuleTemplate>();
+        services.AddSingleton<ITemplateEngine, TemplateEngineService>();
 
         // Singleton services (stateless)
         services.AddTransient<LlmPromptBuilder>();
