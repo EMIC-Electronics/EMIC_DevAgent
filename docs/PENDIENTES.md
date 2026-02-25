@@ -74,13 +74,34 @@
 
 ## Pendientes por implementar
 
-### 9. Sistema de retropropagacion de errores ✅
+### 9. Sistema de retropropagacion de errores ⚠️ Requiere migracion
 
-**Prioridad: Alta** — Implementado en Fase 5.
+**Prioridad: Alta** — Backend+Frontend implementados en EMIC.Shared/EMIC.Web.IDE. SourceMapper del DevAgent usa estrategia obsoleta.
 
-- [x] `SourceMapper` — inserta markers `// @source:` en codigo generado, resuelve errores a archivo SDK fuente
-- [x] `SourceMapper.MapError()` — mapea CompilationError a GeneratedFile via markers o filename fallback
-- [x] Integrado con CompilationAgent — usa SourceMapper + CompilationErrorParser para backtracking preciso
+**Implementacion real (EMIC.Shared — en produccion):**
+- [x] TreeMaker.addToCodigo() genera archivos `.map` TSV separados (`SYS:map/TARGET/xxx.c.map`)
+- [x] Formato: linea N del .map = linea N del TARGET, contenido TSV `originLine\toriginFile\tcomment`
+- [x] CompilerService.ResolveSourceLocation() resuelve errores via lookup directo en .map
+- [x] Module.AppendCompilerException() agrega `source-file`/`source-line` al XML de errores
+- [x] Frontend compiler-exception.js navega al archivo fuente en SDK Editor
+- [x] Documentado en `INFO/DEV-APP/BUILD-SYSTEM/SOURCE_MAP_ERROR_RETROPROPAGATION.md`
+
+**SourceMapper del DevAgent (estrategia obsoleta — pendiente de migrar):**
+- [x] `SourceMapper` — inserta markers `// @source:` en codigo generado cada 10 lineas
+- [x] `SourceMapper.MapError()` — escaneo hacia arriba buscando marker mas cercano + offset
+- [x] Integrado con CompilationAgent — usa SourceMapper + CompilationErrorParser para backtracking
+
+**Problemas de la estrategia `// @source:`:**
+1. Modifica el codigo generado (inserta comentarios que desplazan numeros de linea)
+2. Resolucion imprecisa (bloques de 10 lineas vs mapeo exacto linea-a-linea del .map)
+3. No aprovecha los archivos .map que TreeMaker ya genera durante EMIC:Generate
+
+**Pendiente — Migrar SourceMapper a usar .map files:**
+- [ ] Refactorizar SourceMapper para leer archivos `.map` TSV de `SYS:map/TARGET/`
+- [ ] Eliminar logica de InsertMarkers() (ya no es necesaria)
+- [ ] ResolveErrorLocation() debe usar lookup directo por indice (mapIndex = targetLine - 1)
+- [ ] Mantener fallback por filename matching para casos sin .map disponible
+- [ ] Actualizar CompilationAgent para no llamar InsertSourceMarkers() pre-compilacion
 
 ### 10. Agente de conversion de versiones
 
@@ -135,18 +156,18 @@
 | Pipeline | 1 | ✅ Completado |
 | SDK Services | 4 | ✅ Completado |
 | CLI cleanup | 2 | ✅ Completado |
-| Retropropagacion | 3 | ✅ Completado |
+| Retropropagacion | 3+5 | ⚠️ Backend OK, SourceMapper pendiente migrar |
 | Conversion versiones | 3 | Pendiente |
 | Test modules/projects | 2 | Pendiente |
 | Pipeline configurable | 3 | Pendiente |
 | Retrocompatibilidad | 4+2 | ✅ Validator + 2 pendientes |
-| **Total** | **48** | **38 completados / 10 pendientes** |
+| **Total** | **53** | **38 completados / 15 pendientes** |
 
 ---
 
 ## Orden sugerido para pendientes restantes
 
-1. ~~**Retropropagacion**~~ ✅ — SourceMapper implementado
+1. **Migrar SourceMapper a .map files** — eliminar `// @source:` markers, usar TSV lookup directo
 2. ~~**Retrocompatibilidad (validator)**~~ ✅ — BackwardsCompatibilityValidator implementado
 3. **Retrocompatibilidad (generators)** — integrar verificacion en ApiGenerator/DriverGenerator
 4. **Test modules/projects** — extension de ModuleGenerator + ProjectCreator
@@ -164,4 +185,4 @@
 
 ---
 
-*Ultima actualizacion: 2026-02-24*
+*Ultima actualizacion: 2026-02-25*

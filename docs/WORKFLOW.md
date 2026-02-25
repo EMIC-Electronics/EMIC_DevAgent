@@ -123,13 +123,57 @@ Siempre que sea posible:
 Los errores del compilador (XC16) apuntan a lineas del codigo expandido, no al archivo .emic/.c/.h
 original del SDK.
 
-**Solucion requerida**: Sistema de marcado y retropropagacion:
-1. Durante la expansion (TreeMaker), marcar cada linea generada con su archivo fuente y linea
-2. Cuando el compilador reporta un error en linea N del expandido, usar las marcas para
-   identificar el archivo SDK origen
-3. Propagar la correccion al archivo correcto del SDK
+**Estado**: Implementado en EMIC.Shared + Frontend. El SourceMapper del DevAgent usa una estrategia
+obsoleta (`// @source:` markers) que debe migrarse a usar los archivos `.map`.
 
-**Estado**: Pendiente de diseño detallado (ver tarea en PENDIENTES.md)
+### Implementacion real (archivos .map TSV)
+
+TreeMaker genera un archivo `.map` por cada archivo TARGET durante `EMIC:Generate`.
+El `.map` es un TSV donde **la linea N del .map corresponde a la linea N del TARGET** (0-indexed).
+
+**Formato:**
+```
+originLine\toriginFile\tcomment
+```
+
+**Ejemplo** (`SYS:map/TARGET/led_LED2.c.map`):
+```
+0	DEV:_api/Indicators/LEDs/src/led.c
+1	DEV:_api/Indicators/LEDs/src/led.c	m:.{name}.=LED2
+44	DEV:_api/Indicators/LEDs/src/led.c
+```
+
+**Flujo de resolucion:**
+1. XC16 reporta error: `led_LED2.c:20:2: error: undeclared`
+2. `CompilerService.ResolveSourceLocation("led_LED2.c", 20, _mapFiles)`:
+   - Busca key `SYS:map/TARGET/led_LED2.c.map`
+   - Lee linea index 19 (20-1, compiler es 1-indexed, .map es 0-indexed)
+   - Parsea TSV: `44\tDEV:_api/.../led.c` → sourceLine = 45 (44+1)
+3. `compiler-errors.html` incluye `source-file="DEV:_api/.../led.c" source-line="45"`
+4. Frontend `<compiler-exception>` navega a `/SdkEditor?file=_api/.../led.c&line=45`
+
+**Indexacion:**
+| Contexto | Base |
+|----------|------|
+| Compilador XC16 (error output) | 1-indexed |
+| Archivo .map (fila) | 0-indexed |
+| Campo originLine en .map | 0-indexed |
+| Atributo source-line en XML | 1-indexed |
+
+**Formula:** `mapIndex = targetLine - 1` → lee .map → `sourceLine = originLine + 1`
+
+### Uso desde el DevAgent (pendiente de migrar)
+
+El `SourceMapper` actual inserta markers `// @source:` cada 10 lineas en el codigo generado.
+Esto es **obsoleto** porque:
+1. Modifica el codigo (desplaza lineas, puede interferir con compilacion)
+2. Resolucion imprecisa (bloques de 10 lineas vs mapeo exacto)
+3. No aprovecha los `.map` que TreeMaker ya genera
+
+**Migracion requerida**: `SourceMapper` debe leer los archivos `.map` TSV via `MediaAccess`
+en lugar de insertar markers. Ver `PENDIENTES.md` seccion 9 para tareas detalladas.
+
+**Documentacion completa**: `INFO/DEV-APP/BUILD-SYSTEM/SOURCE_MAP_ERROR_RETROPROPAGATION.md`
 
 ## 10. Notas operativas
 

@@ -30,3 +30,32 @@ Crea un plan detallado para comenzar a desarrollar un agente de IA que permita d
   Recomiendo usar distintos sub-agentes para verificar el cumplimiento de reglas no negocibles, como : Separacion en capas, Codigo no bloqueante, Maquinas de estados, etc.
   Comienza creando dentro de la carpeta de trabajo una carpeta como submodule git en donde se guardara el plan de trabajo, y todos los archivos relacionados mas el proyecto en C#.
   En esta etapa solo  crea las estructura del agente y subagentes.  y la interaccion entre los subagentes y el usuario. (puedes leer los archivos del SDK de ejemplo en esta carpeta.)
+
+
+
+  vamos a repasar el flujo de trabajo con mas detalles:
+  1. el usuario puede pedir un nuevo módulo, pcb , una api , un driver, o agregar alguna funcion de bajo nivel en  hard, con su respectivo hal. O puede pedir la adaptacion o conversión de un modulo , api o
+  driver existente.
+  2. El prompt puede tener ambiguedad, por lo tanto el agente debe obtener una definición clara y uníboca mediante preguntas y recomendaciones.
+  3. El agente debe realizar un plan y division de tareas. entre distintos agentes, el diseño hay que pensarlo desde la capa superior a la inferior, luego se ejecutará de abajo hacia arriba.
+  4. Solo creará la capa de hard/hal en caso que no exista el código necesario para cumplir con el requerimiento, es muy importante cuidar la retrocompatibilidad de todo el codigo existente , principalmente
+  de las capas inferiores, si fuese necesario agregar funciones al codigo existente, debe hacerlo condicionando el nuevo codigo a la existencia de un parametro explicito, por ejemplo "useHhandshake=true" ,
+  de tal manera que el codigo viejo ignore los nuevos features.
+  5. Los drivers que cumplen las misma funciones debe tener funciones con nombres iguales, por ejemplo , todos los sensores de temperature tendran getTemperature se busca que sean intercambiables a nivel
+  API. esto se implementa desde generate.emic cuando de invoca a la API le pasa como parametro el nombre del driver (ver en el modulo USB) :
+  EMIC:setInput(DEV:_api/Wired_Communication/USB/USB_API.emic,driver=MCP2200,port=1,BufferSize=512,baud=9600,frameLf=\n)
+  6. en general todas las opciones deben estar definida en el modulo y se propahan hacia abajo.
+  7. Siempre que sea posible debe ralizarse todas las prueba y test físicos , en caso que el usuario solicite un driver o una api, el sistema debe planificar la mejor manera de realizar las pruebas, creando
+  un modulo de test, que implente todas la funciones y eventos creados, ese modulo debería crearse en la categoria "test" o similar.
+  8. Siempre que sea posible debe crease un proyecto de prueba donde se implementen todas las funciones del modulo , apis y drivers creados.
+  9. Para obtener información respecto a como crear un proyecto emic. se puede consultar el ejemplo @INFO/DEV-APP/CLI/TUTORIAL_YOGURTERA_CONTROLLER.md tambien puedo indicarte la carpeta en donde se guardan
+  mis proyectos (en el momento de ser requerido para la implentación de la fase  de depuracion)
+  10. tener en cuenta que el codigo que se compila no es el codigo que se edita en el SDK, sino que es una expancion . realizada con un entorno definido por el usuario, por los tanto los errores de
+  compilación no apuntan directamente al SDK, esto obliga a buscar una forma de inferir  que archivo del SDK genera se expande en el resultado expandido. Esto se puede hacer con un sistema de marcado del
+  codigo generado en el momento de expandir cada archivo , y luego usar las marcas para retropropagar las correcciones, (este método puede ser mejorado , es por eso que debes agregar como tarea el diseño de
+  la retropropagacion).
+  NOTA 1: el reposiorio de la carpeta PIC_XC16 es un SDK de prueba en donde se pueden hacer cambios libremente (rompiendo algunas reglas que en produccion no se podran romper)
+  NOTA 2: Alguns modulos , apis y drivers no estan funcionando, si encuentras algun modulo con muchas inconsistencias debes informarme para que yo lo borre.
+  NOTA 3: queda pendiente la definción de un agente especializado en convertir versiones viejas a la version actual (anótalo)
+
+  
