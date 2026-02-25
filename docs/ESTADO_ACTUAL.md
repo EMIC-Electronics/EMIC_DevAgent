@@ -159,7 +159,7 @@ EMIC_DevAgent/
                     ICompilationService.cs
                     EmicCompilationService.cs # ✅ EMIC.Shared BuildService wrapper
                     CompilationErrorParser.cs # ✅ GCC/XC16 output parsing
-                    SourceMapper.cs           # ⚠️ Estrategia obsoleta (// @source: markers), pendiente migrar a .map TSV
+                    SourceMapper.cs           # ✅ Migrado a .map TSV (usa CompilerService.ResolveSourceLocation)
                 Validation/
                     ValidationService.cs      # ✅ Sequential validator orchestration
                     ValidationResult.cs

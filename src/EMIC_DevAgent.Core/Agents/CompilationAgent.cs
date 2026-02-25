@@ -1,3 +1,4 @@
+using EMIC.Shared.Services.Storage;
 using EMIC_DevAgent.Core.Agents.Base;
 using EMIC_DevAgent.Core.Configuration;
 using EMIC_DevAgent.Core.Models.Generation;
@@ -17,12 +18,14 @@ public class CompilationAgent : AgentBase
     private readonly CompilationErrorParser _errorParser;
     private readonly SourceMapper _sourceMapper;
     private readonly EmicAgentConfig _config;
+    private readonly MediaAccess _mediaAccess;
 
     public CompilationAgent(
         ICompilationService compilationService,
         CompilationErrorParser errorParser,
         SourceMapper sourceMapper,
         EmicAgentConfig config,
+        MediaAccess mediaAccess,
         ILogger<CompilationAgent> logger)
         : base(logger)
     {
@@ -30,6 +33,7 @@ public class CompilationAgent : AgentBase
         _errorParser = errorParser;
         _sourceMapper = sourceMapper;
         _config = config;
+        _mediaAccess = mediaAccess;
     }
 
     public override string Name => "Compilation";
@@ -45,11 +49,15 @@ public class CompilationAgent : AgentBase
             ? path.ToString() ?? string.Empty
             : string.Empty;
 
+        var systemPath = context.Properties.TryGetValue("SystemPath", out var sp)
+            ? sp.ToString() ?? string.Empty
+            : string.Empty;
+
         Logger.LogInformation("Starting compilation (max {MaxRetries} attempts) for path: {Path}",
             maxRetries, projectPath);
 
-        // Insert @source markers into generated files before compilation
-        InsertSourceMarkers(context);
+        // Load .map TSV files for error-to-source resolution
+        var mapFiles = _sourceMapper.LoadMapFiles(_mediaAccess, systemPath);
 
         CompilationResult? lastResult = null;
 
@@ -97,7 +105,7 @@ public class CompilationAgent : AgentBase
                 break;
 
             // Try to backtrack and fix errors
-            var fixApplied = TryBacktrackAndFix(context, lastResult);
+            var fixApplied = TryBacktrackAndFix(context, lastResult, mapFiles);
 
             if (!fixApplied)
             {
@@ -116,26 +124,10 @@ public class CompilationAgent : AgentBase
     }
 
     /// <summary>
-    /// Inserts @source markers into Source and Header files for error backtracking.
-    /// </summary>
-    private void InsertSourceMarkers(AgentContext context)
-    {
-        foreach (var file in context.GeneratedFiles)
-        {
-            if (file.Type == FileType.Source || file.Type == FileType.Header)
-            {
-                file.Content = _sourceMapper.InsertMarkers(file);
-            }
-        }
-        Logger.LogDebug("Inserted @source markers into {Count} source/header files",
-            context.GeneratedFiles.Count(f => f.Type == FileType.Source || f.Type == FileType.Header));
-    }
-
-    /// <summary>
     /// Attempts to backtrack compilation errors to generated source files and apply simple fixes.
-    /// Uses SourceMapper for accurate error-to-source mapping, with filename fallback.
+    /// Uses SourceMapper with .map TSV files for accurate error-to-source mapping, with filename fallback.
     /// </summary>
-    private bool TryBacktrackAndFix(AgentContext context, CompilationResult result)
+    private bool TryBacktrackAndFix(AgentContext context, CompilationResult result, Dictionary<string, string> mapFiles)
     {
         bool anyFixed = false;
 
@@ -157,15 +149,10 @@ public class CompilationAgent : AgentBase
             }
         }
 
-        // Get expanded content if available for @source marker resolution
-        var expandedContent = context.Properties.TryGetValue("ExpandedContent", out var expanded)
-            ? expanded.ToString()
-            : null;
-
         foreach (var error in structuredErrors)
         {
-            // Use SourceMapper for accurate backtracking
-            var mapped = _sourceMapper.MapError(error, context.GeneratedFiles, expandedContent);
+            // Use SourceMapper with .map TSV files for accurate backtracking
+            var mapped = _sourceMapper.MapError(error, context.GeneratedFiles, mapFiles);
             if (mapped == null)
                 continue;
 

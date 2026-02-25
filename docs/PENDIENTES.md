@@ -87,21 +87,12 @@
 - [x] Documentado en `INFO/DEV-APP/BUILD-SYSTEM/SOURCE_MAP_ERROR_RETROPROPAGATION.md`
 
 **SourceMapper del DevAgent (estrategia obsoleta — pendiente de migrar):**
-- [x] `SourceMapper` — inserta markers `// @source:` en codigo generado cada 10 lineas
-- [x] `SourceMapper.MapError()` — escaneo hacia arriba buscando marker mas cercano + offset
-- [x] Integrado con CompilationAgent — usa SourceMapper + CompilationErrorParser para backtracking
-
-**Problemas de la estrategia `// @source:`:**
-1. Modifica el codigo generado (inserta comentarios que desplazan numeros de linea)
-2. Resolucion imprecisa (bloques de 10 lineas vs mapeo exacto linea-a-linea del .map)
-3. No aprovecha los archivos .map que TreeMaker ya genera durante EMIC:Generate
-
-**Pendiente — Migrar SourceMapper a usar .map files:**
-- [ ] Refactorizar SourceMapper para leer archivos `.map` TSV de `SYS:map/TARGET/`
-- [ ] Eliminar logica de InsertMarkers() (ya no es necesaria)
-- [ ] ResolveErrorLocation() debe usar lookup directo por indice (mapIndex = targetLine - 1)
-- [ ] Mantener fallback por filename matching para casos sin .map disponible
-- [ ] Actualizar CompilationAgent para no llamar InsertSourceMarkers() pre-compilacion
+- [x] `SourceMapper` — migrado a .map TSV (usa `CompilerService.ResolveSourceLocation()`)
+- [x] `SourceMapper.LoadMapFiles()` — carga archivos `.map` TSV de `SYS:map/TARGET/` via MediaAccess
+- [x] `SourceMapper.MapError()` — Strategy 1: lookup exacto via .map TSV, Strategy 2: fallback filename matching
+- [x] Integrado con CompilationAgent — inyecta MediaAccess, carga mapFiles antes de compilar
+- [x] Eliminado: `InsertMarkers()`, `ResolveErrorLocation()`, `SourceMarkerRegex`, `InsertSourceMarkers()`
+- [x] Agregado `GetFiles()` a `MediaAccess.DirectoryHelper` para listar archivos .map
 
 ### 10. Agente de conversion de versiones
 
