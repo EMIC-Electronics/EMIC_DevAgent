@@ -10,6 +10,7 @@
 | **Fase 2** | Templates (Api, Driver, Module) + Validadores (4) + ValidationService + RuleValidatorAgent | Completado |
 | **Fase 3** | Agentes (7) + OrchestrationPipeline — orquestacion completa | Completado |
 | **Fase 4** | ITemplateEngine impl + CLI cleanup — zero stubs, pipeline E2E listo | Completado |
+| **Fase 5** | SourceMapper (retropropagacion) + BackwardsCompatibilityValidator | Completado |
 
 ---
 
@@ -73,19 +74,13 @@
 
 ## Pendientes por implementar
 
-### 9. Sistema de retropropagacion de errores
+### 9. Sistema de retropropagacion de errores ✅
 
-**Prioridad: Alta** — Sin esto, el CompilationAgent no puede corregir errores eficientemente.
+**Prioridad: Alta** — Implementado en Fase 5.
 
-- [ ] Diseñar sistema de marcado de codigo expandido (TreeMaker marca cada linea con archivo:linea origen)
-- [ ] Implementar parser de marcas en output compilado → archivo SDK fuente
-- [ ] Integrar con CompilationAgent para corregir archivo correcto del SDK
-
-**Problema**: El compilador reporta errores en el codigo expandido (TARGET), no en el SDK fuente.
-El agente necesita saber que archivo .emic/.c/.h del SDK genero la linea con error.
-
-**Posible enfoque**: Insertar comentarios `// @source: DEV:_api/xxx/yyy.c:42` en el codigo generado,
-luego parsear la posicion del error y buscar la marca mas cercana.
+- [x] `SourceMapper` — inserta markers `// @source:` en codigo generado, resuelve errores a archivo SDK fuente
+- [x] `SourceMapper.MapError()` — mapea CompilationError a GeneratedFile via markers o filename fallback
+- [x] Integrado con CompilationAgent — usa SourceMapper + CompilationErrorParser para backtracking preciso
 
 ### 10. Agente de conversion de versiones
 
@@ -115,14 +110,16 @@ luego parsear la posicion del error y buscar la marca mas cercana.
 - [ ] Implementar configuracion basica donde aporte valor real, evitando abstracciones innecesarias
 - [ ] Preparar estructura para que en el futuro se puedan agregar pipelines para otros SDKs (Web, backend, mobile)
 
-### 13. Retrocompatibilidad en capas inferiores
+### 13. Retrocompatibilidad en capas inferiores ✅
 
-**Prioridad: Alta** — Regla transversal que afecta a ApiGenerator, DriverGenerator, y validadores.
+**Prioridad: Alta** — Implementado en Fase 5.
 
+- [x] `BackwardsCompatibilityValidator` — verifica EMIC:ifdef/#ifdef guards en .emic/.h/.c
+- [x] Valida .emic: optional EMIC:define (events/polls) debe tener EMIC:ifdef correspondiente
+- [x] Valida .h/.c: funciones no-core fuera de ifdef blocks → Warning
+- [x] Core functions (init, poll, *_init, *_poll) se excluyen automaticamente
 - [ ] Implementar en ApiGeneratorAgent: verificar que nuevos features usen parametros condicionales
 - [ ] Implementar en DriverGeneratorAgent: EMIC:ifdef guards para funcionalidad nueva
-- [ ] Implementar en DependencyValidator: verificar que modulos existentes no se rompan
-- [ ] Documentar patron estandar de retrocompatibilidad (EMIC:ifdef + #ifdef)
 
 ---
 
@@ -133,28 +130,29 @@ luego parsear la posicion del error y buscar la marca mas cercana.
 | LLM | 4 | ✅ Completado |
 | Compilacion | 2 | ✅ Completado |
 | Templates | 4 | ✅ Completado |
-| Validadores | 5 | ✅ Completado |
+| Validadores | 6 | ✅ Completado |
 | Agentes | 8 | ✅ Completado |
 | Pipeline | 1 | ✅ Completado |
 | SDK Services | 4 | ✅ Completado |
 | CLI cleanup | 2 | ✅ Completado |
-| Retropropagacion | 3 | Pendiente |
+| Retropropagacion | 3 | ✅ Completado |
 | Conversion versiones | 3 | Pendiente |
 | Test modules/projects | 2 | Pendiente |
 | Pipeline configurable | 3 | Pendiente |
-| Retrocompatibilidad | 4 | Pendiente |
-| **Total** | **45** | **30 completados / 15 pendientes** |
+| Retrocompatibilidad | 4+2 | ✅ Validator + 2 pendientes |
+| **Total** | **48** | **38 completados / 10 pendientes** |
 
 ---
 
 ## Orden sugerido para pendientes restantes
 
-1. **Retropropagacion** — diseño del sistema de marcado (necesario antes de mejorar CompilationAgent)
-2. **Retrocompatibilidad** — reglas transversales en generators + validators
-3. **Test modules/projects** — extension de ModuleGenerator + ProjectCreator
-4. **Pipeline configurable** — esquema JSON + loader
-5. **Conversion de versiones** — agente especializado
-6. **Testing E2E** — prompt -> codigo -> compilacion -> correccion
+1. ~~**Retropropagacion**~~ ✅ — SourceMapper implementado
+2. ~~**Retrocompatibilidad (validator)**~~ ✅ — BackwardsCompatibilityValidator implementado
+3. **Retrocompatibilidad (generators)** — integrar verificacion en ApiGenerator/DriverGenerator
+4. **Test modules/projects** — extension de ModuleGenerator + ProjectCreator
+5. **Pipeline configurable** — esquema JSON + loader
+6. **Conversion de versiones** — agente especializado
+7. **Testing E2E** — prompt -> codigo -> compilacion -> correccion
 
 ---
 

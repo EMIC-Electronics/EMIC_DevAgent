@@ -8,7 +8,7 @@
 
 ## Resumen Ejecutivo
 
-EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar codigo para el SDK EMIC a partir de prompts en lenguaje natural. **Todas las fases de implementacion core estan completadas** (Fases 0-4). El pipeline completo esta funcional: prompt → intent classification → disambiguation → SDK analysis → code generation → validation → compilation.
+EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar codigo para el SDK EMIC a partir de prompts en lenguaje natural. **Todas las fases de implementacion core estan completadas** (Fases 0-5). El pipeline completo esta funcional: prompt → intent classification → disambiguation → SDK analysis → code generation → validation → compilation.
 
 **Lo que funciona hoy:**
 - `dotnet build` compila sin errores (0 warnings en DevAgent)
@@ -21,12 +21,12 @@ EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar cod
 - LLM: ClaudeLlmService con Anthropic API (GenerateAsync, GenerateWithContext, GenerateStructured)
 - SDK Scanner: escaneo real via MediaAccess (APIs, drivers, modulos, HAL)
 - Templates: ApiTemplate, DriverTemplate, ModuleTemplate + TemplateEngineService
-- Validators: LayerSeparation, NonBlocking, StateMachine, Dependency
+- Validators: LayerSeparation, NonBlocking, StateMachine, Dependency, BackwardsCompatibility
 - Compilation: EmicCompilationService wrapper sobre EMIC.Shared + CompilationErrorParser
+- SourceMapper: retropropagacion de errores del codigo expandido al fuente SDK original
 
 **Pendiente de mejora:**
-- Sistema de retropropagacion de errores (TreeMaker → SDK source mapping)
-- Retrocompatibilidad automatica en generators
+- Retrocompatibilidad automatica en generators (ApiGenerator, DriverGenerator)
 - Generacion de modulos/proyectos de test
 - Pipeline configurable via JSON
 - Agente de conversion de versiones
@@ -46,15 +46,15 @@ EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar cod
 | CLI | 4 | 4 | 0 |
 | Tests | 1 | 1 | 0 |
 | Agentes | 8 | 8 | 0 |
-| Validadores | 5 | 5 | 0 |
+| Validadores | 6 | 6 | 0 |
 | Servicios LLM | 3 | 3 | 0 |
 | Servicios SDK | 4 | 4 | 0 |
 | Templates | 4 | 4 | 0 |
 | Metadata | 2 | 2 | 0 |
-| Compilacion | 3 | 3 | 0 |
+| Compilacion | 4 | 4 | 0 |
 | Validacion | 2 | 2 | 0 |
 | Pipeline | 2 | 2 | 0 |
-| **Total** | **68** | **68** | **0** |
+| **Total** | **70** | **70** | **0** |
 
 ---
 
@@ -68,6 +68,7 @@ EMIC_DevAgent es un CLI multi-agente en C# (.NET 8) cuyo objetivo es generar cod
 | Fase 2 | 3 Templates + 4 Validators + ValidationService + RuleValidatorAgent | 9 | ✅ |
 | Fase 3 | 7 Agents + OrchestrationPipeline | 8 | ✅ |
 | Fase 4 | TemplateEngineService + CLI cleanup + docs update | 4 | ✅ |
+| Fase 5 | SourceMapper + BackwardsCompatibilityValidator + CompilationAgent refactor | 3 | ✅ |
 
 ---
 
@@ -110,14 +111,15 @@ EMIC_DevAgent/
                 DriverGeneratorAgent.cs   # ✅ LLM-enhanced driver generation
                 ModuleGeneratorAgent.cs   # ✅ Module generation with dependency wiring
                 ProgramXmlAgent.cs        # ✅ program.xml + userFncFile generation
-                CompilationAgent.cs       # ✅ Retry loop + backtracking + auto-fix
-                RuleValidatorAgent.cs     # ✅ Delegates to 4 validators
+                CompilationAgent.cs       # ✅ Retry loop + SourceMapper backtracking + auto-fix
+                RuleValidatorAgent.cs     # ✅ Delegates to 5 validators
                 Validators/
                     IValidator.cs
-                    LayerSeparationValidator.cs  # ✅ HW register detection in API layer
-                    NonBlockingValidator.cs      # ✅ 3 rules: delay, infinite loop, blocking while
-                    StateMachineValidator.cs     # ✅ Function analysis + state variable check
-                    DependencyValidator.cs       # ✅ setInput validation + DFS cycle detection
+                    LayerSeparationValidator.cs       # ✅ HW register detection in API layer
+                    NonBlockingValidator.cs           # ✅ 3 rules: delay, infinite loop, blocking while
+                    StateMachineValidator.cs          # ✅ Function analysis + state variable check
+                    DependencyValidator.cs            # ✅ setInput validation + DFS cycle detection
+                    BackwardsCompatibilityValidator.cs # ✅ EMIC:ifdef/#ifdef guard verification
             Orchestration/
                 OrchestrationPipeline.cs  # ✅ Sequential execution with conditions
                 PipelineStep.cs
@@ -156,6 +158,7 @@ EMIC_DevAgent/
                     ICompilationService.cs
                     EmicCompilationService.cs # ✅ EMIC.Shared BuildService wrapper
                     CompilationErrorParser.cs # ✅ GCC/XC16 output parsing
+                    SourceMapper.cs           # ✅ @source marker insertion + error backtracking
                 Validation/
                     ValidationService.cs      # ✅ Sequential validator orchestration
                     ValidationResult.cs

@@ -9,16 +9,26 @@ namespace EMIC_DevAgent.Core.Agents;
 /// <summary>
 /// Compila con XC16, parsea errores, retropropaga correcciones.
 /// Reintenta hasta MaxCompilationRetries veces.
+/// Uses SourceMapper for accurate error-to-source backtracking.
 /// </summary>
 public class CompilationAgent : AgentBase
 {
     private readonly ICompilationService _compilationService;
+    private readonly CompilationErrorParser _errorParser;
+    private readonly SourceMapper _sourceMapper;
     private readonly EmicAgentConfig _config;
 
-    public CompilationAgent(ICompilationService compilationService, EmicAgentConfig config, ILogger<CompilationAgent> logger)
+    public CompilationAgent(
+        ICompilationService compilationService,
+        CompilationErrorParser errorParser,
+        SourceMapper sourceMapper,
+        EmicAgentConfig config,
+        ILogger<CompilationAgent> logger)
         : base(logger)
     {
         _compilationService = compilationService;
+        _errorParser = errorParser;
+        _sourceMapper = sourceMapper;
         _config = config;
     }
 
@@ -37,6 +47,9 @@ public class CompilationAgent : AgentBase
 
         Logger.LogInformation("Starting compilation (max {MaxRetries} attempts) for path: {Path}",
             maxRetries, projectPath);
+
+        // Insert @source markers into generated files before compilation
+        InsertSourceMarkers(context);
 
         CompilationResult? lastResult = null;
 
@@ -103,81 +116,96 @@ public class CompilationAgent : AgentBase
     }
 
     /// <summary>
+    /// Inserts @source markers into Source and Header files for error backtracking.
+    /// </summary>
+    private void InsertSourceMarkers(AgentContext context)
+    {
+        foreach (var file in context.GeneratedFiles)
+        {
+            if (file.Type == FileType.Source || file.Type == FileType.Header)
+            {
+                file.Content = _sourceMapper.InsertMarkers(file);
+            }
+        }
+        Logger.LogDebug("Inserted @source markers into {Count} source/header files",
+            context.GeneratedFiles.Count(f => f.Type == FileType.Source || f.Type == FileType.Header));
+    }
+
+    /// <summary>
     /// Attempts to backtrack compilation errors to generated source files and apply simple fixes.
-    /// Uses @source markers if present, otherwise matches by filename.
+    /// Uses SourceMapper for accurate error-to-source mapping, with filename fallback.
     /// </summary>
     private bool TryBacktrackAndFix(AgentContext context, CompilationResult result)
     {
         bool anyFixed = false;
 
-        foreach (var error in result.Errors)
+        // Parse structured errors from raw error strings
+        var structuredErrors = new List<CompilationError>();
+        foreach (var errorStr in result.Errors)
         {
-            // Try to find the generated file that caused this error
-            var sourceFile = BacktrackToGeneratedFile(context, error);
-            if (sourceFile == null)
+            var parsed = _errorParser.Parse(errorStr);
+            if (parsed.Count > 0)
+                structuredErrors.AddRange(parsed);
+            else
+            {
+                // Create a basic error from the raw string
+                structuredErrors.Add(new CompilationError
+                {
+                    Message = errorStr,
+                    Severity = "error"
+                });
+            }
+        }
+
+        // Get expanded content if available for @source marker resolution
+        var expandedContent = context.Properties.TryGetValue("ExpandedContent", out var expanded)
+            ? expanded.ToString()
+            : null;
+
+        foreach (var error in structuredErrors)
+        {
+            // Use SourceMapper for accurate backtracking
+            var mapped = _sourceMapper.MapError(error, context.GeneratedFiles, expandedContent);
+            if (mapped == null)
                 continue;
 
-            // Apply simple automatic fixes
-            var fixResult = TryApplySimpleFix(sourceFile, error);
+            var fixResult = TryApplySimpleFix(mapped.MappedFile, mapped.MappedLine, error);
             if (fixResult)
             {
                 anyFixed = true;
-                Logger.LogInformation("Applied fix for error in {File}: {Error}",
-                    sourceFile.RelativePath, Truncate(error, 100));
+                Logger.LogInformation("Applied fix for error in {File}:{Line}: {Error}",
+                    mapped.MappedFile.RelativePath, mapped.MappedLine, Truncate(error.Message, 100));
             }
         }
 
         return anyFixed;
     }
 
-    private static GeneratedFile? BacktrackToGeneratedFile(AgentContext context, string errorMessage)
+    private bool TryApplySimpleFix(GeneratedFile file, int errorLine, CompilationError error)
     {
-        // Try to extract filename from error message (format: "file.c:42: error: ...")
-        foreach (var file in context.GeneratedFiles.Where(f => f.Type == FileType.Source || f.Type == FileType.Header))
-        {
-            var fileName = Path.GetFileName(file.RelativePath);
-            if (errorMessage.Contains(fileName, StringComparison.OrdinalIgnoreCase))
-                return file;
-        }
-
-        return null;
-    }
-
-    private bool TryApplySimpleFix(GeneratedFile file, string error)
-    {
-        var lowerError = error.ToLowerInvariant();
-
-        // Fix: missing semicolon
-        if (lowerError.Contains("expected ';'") || lowerError.Contains("missing ';'"))
-        {
-            Logger.LogDebug("Detected missing semicolon error in {File}", file.RelativePath);
-            // We can't auto-fix without knowing the exact line; flag for next attempt
-            return false;
-        }
+        var lowerMsg = error.Message.ToLowerInvariant();
 
         // Fix: undeclared identifier — might need a #include
-        if (lowerError.Contains("undeclared") || lowerError.Contains("undefined"))
+        if (lowerMsg.Contains("undeclared") || lowerMsg.Contains("undefined"))
         {
-            Logger.LogDebug("Detected undeclared/undefined error in {File}", file.RelativePath);
-            // Add missing include if we can infer it
-            return TryAddMissingInclude(file, error);
+            Logger.LogDebug("Detected undeclared/undefined error in {File}:{Line}", file.RelativePath, errorLine);
+            return TryAddMissingInclude(file, error.Message);
         }
 
         // Fix: implicit declaration of function
-        if (lowerError.Contains("implicit declaration"))
+        if (lowerMsg.Contains("implicit declaration"))
         {
-            Logger.LogDebug("Detected implicit declaration in {File}", file.RelativePath);
-            return TryAddMissingInclude(file, error);
+            Logger.LogDebug("Detected implicit declaration in {File}:{Line}", file.RelativePath, errorLine);
+            return TryAddMissingInclude(file, error.Message);
         }
 
         return false;
     }
 
-    private static bool TryAddMissingInclude(GeneratedFile file, string error)
+    private static bool TryAddMissingInclude(GeneratedFile file, string errorMessage)
     {
         // Extract the missing identifier
-        // Pattern: "undeclared identifier 'HAL_GPIO_PinCfg'" or similar
-        var funcMatch = System.Text.RegularExpressions.Regex.Match(error, @"'(\w+)'");
+        var funcMatch = System.Text.RegularExpressions.Regex.Match(errorMessage, @"'(\w+)'");
         if (!funcMatch.Success) return false;
 
         var identifier = funcMatch.Groups[1].Value;
@@ -189,13 +217,16 @@ public class CompilationAgent : AgentBase
         else if (identifier.StartsWith("HAL_I2C")) header = "hal_i2c.h";
         else if (identifier.StartsWith("HAL_UART")) header = "hal_uart.h";
         else if (identifier.StartsWith("HAL_ADC")) header = "hal_adc.h";
+        else if (identifier.StartsWith("HAL_PWM")) header = "hal_pwm.h";
+        else if (identifier.StartsWith("HAL_Timer")) header = "hal_timer.h";
+        else if (identifier.StartsWith("getSystemMilis")) header = "system_time.h";
 
         if (header == null) return false;
 
         var include = $"#include \"{header}\"";
         if (file.Content.Contains(include)) return false;
 
-        // Add the include after the first #include line
+        // Add the include after the last #include line
         var lines = file.Content.Split('\n').ToList();
         var lastInclude = lines.FindLastIndex(l => l.TrimStart().StartsWith("#include"));
         if (lastInclude >= 0)

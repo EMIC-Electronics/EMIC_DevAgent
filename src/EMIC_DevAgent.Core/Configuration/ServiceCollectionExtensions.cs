@@ -26,6 +26,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IValidator, NonBlockingValidator>();
         services.AddSingleton<IValidator, StateMachineValidator>();
         services.AddSingleton<IValidator, DependencyValidator>();
+        services.AddSingleton<IValidator, BackwardsCompatibilityValidator>();
 
         // Templates
         services.AddSingleton<ApiTemplate>();
@@ -36,6 +37,7 @@ public static class ServiceCollectionExtensions
         // Singleton services (stateless)
         services.AddTransient<LlmPromptBuilder>();
         services.AddSingleton<CompilationErrorParser>();
+        services.AddSingleton<SourceMapper>();
 
         // MediaAccess (scoped, needs IAgentSession for user context)
         services.AddScoped<MediaAccess>(sp =>
