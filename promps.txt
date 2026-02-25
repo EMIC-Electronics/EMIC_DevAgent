@@ -58,4 +58,15 @@ Crea un plan detallado para comenzar a desarrollar un agente de IA que permita d
   NOTA 2: Alguns modulos , apis y drivers no estan funcionando, si encuentras algun modulo con muchas inconsistencias debes informarme para que yo lo borre.
   NOTA 3: queda pendiente la definción de un agente especializado en convertir versiones viejas a la version actual (anótalo)
 
-  
+   otras recomendaciones
+  si  el usuario solo pide un sensor sin espscificar la salida, la desambiguacion deberia tener dos partes dundamentales:
+  1- la especificacion del sensor.
+  2- la especificacion de la salida que en este caso es mucho mas ambigua.
+  para la 2 tener en cuenta que el modulo puede ser standalone o puede ser parte del sistema modular EMIC, (esta pregunta siempre debe ser aclarado , en caso que se un modulo del sistema EMIC se presupone
+   que tiene la API de EMIC-bus (i2c) , pero no hace falta nombrarlo solo decir es un modulo del sistema modular  EMIC ). Esta pregunta se debe hacer cuando el la especificacion falta la salida o la
+  entrada. porque se sospecha que la ambiguedad proviene de no aclarar que se trate de un modulo.
+  Podria empezar el cuestionario diciendo : dime que  quieres crear   y dar opciones: proyecto monolitico ( de una sola placa) ,  modulo EMIC, sistema distribiido, etc.
+  Entonses si es un modulo EMIC, puede preguntar: sensor, actuador , display, indicador, comunicacion, otro (especificar) , etc.
+  si es un sistema unificado, deberia preguntar , si es un sistema de control cerrado , un sistema de monitoreo, control remoto, o combinacion de varios . siempre con una opcion para que el usuario pueda
+  explicar si la opcion no esta en la lista.
+  NOTA IMORTANTE: en esta etapa no hay que conocer los recursos existentes, eso vendra despues de obtener la especificacion. Lo veromos con detalle mas adelante.

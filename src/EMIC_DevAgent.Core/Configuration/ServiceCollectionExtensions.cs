@@ -83,6 +83,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ILlmService>(),
                 sp.GetRequiredService<IUserInteraction>(),
                 subAgents,
+                sp.GetRequiredService<ISdkScanner>(),
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<OrchestratorAgent>>());
         });
 

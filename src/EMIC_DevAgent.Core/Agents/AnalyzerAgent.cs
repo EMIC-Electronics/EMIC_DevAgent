@@ -31,24 +31,33 @@ public class AnalyzerAgent : AgentBase
         Logger.LogInformation("Analyzing SDK for intent: {Intent}, component: {Component}",
             analysis.Intent, analysis.ComponentName);
 
-        // 1. Scan SDK to build inventory
-        var sdkPath = context.Properties.TryGetValue("SdkPath", out var path)
-            ? path.ToString() ?? string.Empty
-            : string.Empty;
-
+        // 1. Scan SDK to build inventory (skip if already populated by orchestrator)
         SdkInventory inventory;
-        try
+        if (context.SdkState != null && context.SdkState.Apis.Count + context.SdkState.Drivers.Count + context.SdkState.Modules.Count > 0)
         {
-            inventory = await _sdkScanner.ScanAsync(sdkPath, ct);
-            context.SdkState = inventory;
-            Logger.LogInformation("SDK scan complete: {Apis} APIs, {Drivers} drivers, {Modules} modules, {Hal} HAL components",
-                inventory.Apis.Count, inventory.Drivers.Count, inventory.Modules.Count, inventory.HalComponents.Count);
+            inventory = context.SdkState;
+            Logger.LogInformation("Reusing existing SDK inventory: {Apis} APIs, {Drivers} drivers, {Modules} modules",
+                inventory.Apis.Count, inventory.Drivers.Count, inventory.Modules.Count);
         }
-        catch (Exception ex)
+        else
         {
-            Logger.LogWarning(ex, "SDK scan failed, proceeding with empty inventory");
-            inventory = new SdkInventory();
-            context.SdkState = inventory;
+            var sdkPath = context.Properties.TryGetValue("SdkPath", out var path)
+                ? path.ToString() ?? string.Empty
+                : string.Empty;
+
+            try
+            {
+                inventory = await _sdkScanner.ScanAsync(sdkPath, ct);
+                context.SdkState = inventory;
+                Logger.LogInformation("SDK scan complete: {Apis} APIs, {Drivers} drivers, {Modules} modules, {Hal} HAL components",
+                    inventory.Apis.Count, inventory.Drivers.Count, inventory.Modules.Count, inventory.HalComponents.Count);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "SDK scan failed, proceeding with empty inventory");
+                inventory = new SdkInventory();
+                context.SdkState = inventory;
+            }
         }
 
         // 2. Find reusable components based on intent

@@ -72,7 +72,8 @@ public class Program
         var orchestrator = scope.ServiceProvider.GetRequiredService<OrchestratorAgent>();
         var context = new AgentContext
         {
-            OriginalPrompt = prompt
+            OriginalPrompt = prompt,
+            DisambiguationOnly = true
         };
         context.Properties["SdkPath"] = config.SdkPath;
 
@@ -81,6 +82,50 @@ public class Program
         Console.WriteLine();
         Console.WriteLine($"Resultado: {result.Status}");
         Console.WriteLine($"Mensaje: {result.Message}");
+
+        if (context.Specification != null)
+        {
+            Console.WriteLine();
+            Console.WriteLine("=== ESPECIFICACION JSON ===");
+            var spec = context.Specification;
+            if (spec.ProjectType != ProjectType.Unknown)
+                Console.WriteLine($"  ProjectType: {spec.ProjectType}");
+            if (spec.ModuleRole != ModuleRole.Unknown)
+                Console.WriteLine($"  ModuleRole: {spec.ModuleRole}");
+            if (spec.SystemKind != SystemKind.Unknown)
+                Console.WriteLine($"  SystemKind: {spec.SystemKind}");
+            Console.WriteLine($"  Intent: {spec.Intent}");
+            Console.WriteLine($"  ComponentName: {spec.ComponentName}");
+            Console.WriteLine($"  Category: {spec.Category}");
+            Console.WriteLine($"  Description: {spec.Description}");
+            if (!string.IsNullOrEmpty(spec.SensorType))
+                Console.WriteLine($"  SensorType: {spec.SensorType}");
+            if (!string.IsNullOrEmpty(spec.CommunicationInterface))
+                Console.WriteLine($"  CommunicationInterface: {spec.CommunicationInterface}");
+            if (!string.IsNullOrEmpty(spec.MeasurementRange))
+                Console.WriteLine($"  MeasurementRange: {spec.MeasurementRange}");
+            if (!string.IsNullOrEmpty(spec.MeasurementUnit))
+                Console.WriteLine($"  MeasurementUnit: {spec.MeasurementUnit}");
+            if (!string.IsNullOrEmpty(spec.Precision))
+                Console.WriteLine($"  Precision: {spec.Precision}");
+            if (!string.IsNullOrEmpty(spec.TargetPcb))
+                Console.WriteLine($"  TargetPcb: {spec.TargetPcb}");
+            if (!string.IsNullOrEmpty(spec.ChipOrProtocol))
+                Console.WriteLine($"  ChipOrProtocol: {spec.ChipOrProtocol}");
+            if (!string.IsNullOrEmpty(spec.OutputType))
+                Console.WriteLine($"  OutputType: {spec.OutputType}");
+            if (spec.ReusableApis.Count > 0)
+                Console.WriteLine($"  ReusableApis: {string.Join(", ", spec.ReusableApis)}");
+            if (spec.ReusableDrivers.Count > 0)
+                Console.WriteLine($"  ReusableDrivers: {string.Join(", ", spec.ReusableDrivers)}");
+            if (spec.ComponentsToCreate.Count > 0)
+                Console.WriteLine($"  ComponentsToCreate: {string.Join(", ", spec.ComponentsToCreate)}");
+            if (spec.RequiredDependencies.Count > 0)
+                Console.WriteLine($"  RequiredDependencies: {string.Join(", ", spec.RequiredDependencies)}");
+            foreach (var kv in spec.AdditionalDetails)
+                Console.WriteLine($"  {kv.Key}: {kv.Value}");
+            Console.WriteLine("===========================");
+        }
 
         if (context.GeneratedFiles.Count > 0)
         {
