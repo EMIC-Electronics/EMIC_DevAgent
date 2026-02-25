@@ -1,4 +1,3 @@
-using EMIC.Shared.Services.Emic;
 using EMIC.Shared.Services.Storage;
 using EMIC_DevAgent.Core.Models.Generation;
 using Microsoft.Extensions.Logging;
@@ -75,7 +74,7 @@ public class SourceMapper
 
     /// <summary>
     /// Maps a CompilationError to the original generated file.
-    /// Strategy 1: Use .map TSV files via CompilerService.ResolveSourceLocation() for exact resolution.
+    /// Strategy 1: Use .map TSV files for exact line-level resolution.
     /// Strategy 2: Fallback to filename matching.
     /// </summary>
     public SourceMappedError? MapError(CompilationError error, List<GeneratedFile> generatedFiles,
@@ -84,7 +83,7 @@ public class SourceMapper
         // Strategy 1: Use .map TSV files for exact resolution
         if (mapFiles != null && mapFiles.Count > 0 && !string.IsNullOrEmpty(error.FilePath) && error.Line > 0)
         {
-            var resolved = CompilerService.ResolveSourceLocation(error.FilePath, error.Line, mapFiles);
+            var resolved = ResolveSourceLocation(error.FilePath, error.Line, mapFiles);
             if (resolved.HasValue)
             {
                 var (sourceFile, sourceLine, comment) = resolved.Value;
@@ -140,6 +139,55 @@ public class SourceMapper
 
         _logger.LogDebug("Could not map error in {File}:{Line}", error.FilePath, error.Line);
         return null;
+    }
+
+    /// <summary>
+    /// Resolves a TARGET file + line to the original source file + line using .map TSV data.
+    /// Equivalent to CompilerService.ResolveSourceLocation() but without the [Obsolete] dependency.
+    /// </summary>
+    private static (string sourceFile, int sourceLine, string comment)? ResolveSourceLocation(
+        string targetFile, int targetLine, Dictionary<string, string> mapFiles)
+    {
+        if (string.IsNullOrEmpty(targetFile) || targetLine < 1 || mapFiles == null || mapFiles.Count == 0)
+            return null;
+
+        try
+        {
+            string fileName = targetFile.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries).Last();
+
+            string? mapKey = mapFiles.Keys.FirstOrDefault(k =>
+                k.EndsWith($"/{fileName}.map", StringComparison.OrdinalIgnoreCase));
+
+            if (mapKey == null)
+                return null;
+
+            string mapContent = mapFiles[mapKey];
+            var lines = mapContent.Split('\n');
+
+            // .map is 0-indexed, compiler reports 1-indexed
+            int mapIndex = targetLine - 1;
+            if (mapIndex < 0 || mapIndex >= lines.Length)
+                return null;
+
+            string mapLine = lines[mapIndex];
+            var parts = mapLine.Split('\t');
+
+            if (parts.Length < 2)
+                return null;
+
+            if (!int.TryParse(parts[0].Trim(), out int originLine))
+                return null;
+
+            string originFile = parts[1].Trim();
+            string comment = parts.Length > 2 ? parts[2].Trim() : "";
+
+            // originLine in .map is 0-indexed, convert to 1-indexed
+            return (originFile, originLine + 1, comment);
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
 
