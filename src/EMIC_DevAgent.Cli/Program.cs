@@ -59,14 +59,10 @@ public class Program
         Console.WriteLine($"Microcontrolador: {config.DefaultMicrocontroller}");
         Console.WriteLine($"LLM: {config.Llm.Provider} ({config.Llm.Model})");
         Console.WriteLine();
-        Console.Write("Describa que desea crear > ");
 
-        var prompt = Console.ReadLine();
-        if (string.IsNullOrWhiteSpace(prompt))
-        {
-            Console.WriteLine("No se ingreso ningun prompt. Saliendo.");
-            return;
-        }
+        // El menu interactivo se presenta dentro del OrchestratorAgent.
+        // El prompt inicial es opcional (contexto adicional para el LLM).
+        var prompt = "(menu interactivo)";
 
         using var scope = provider.CreateScope();
         var orchestrator = scope.ServiceProvider.GetRequiredService<OrchestratorAgent>();
@@ -94,6 +90,12 @@ public class Program
                 Console.WriteLine($"  ModuleRole: {spec.ModuleRole}");
             if (spec.SystemKind != SystemKind.Unknown)
                 Console.WriteLine($"  SystemKind: {spec.SystemKind}");
+            if (spec.DeviceFunction != DeviceFunction.Unknown)
+                Console.WriteLine($"  DeviceFunction: {spec.DeviceFunction}");
+            if (spec.ApiType != ApiType.Unknown)
+                Console.WriteLine($"  ApiType: {spec.ApiType}");
+            if (spec.DriverTarget != DriverTarget.Unknown)
+                Console.WriteLine($"  DriverTarget: {spec.DriverTarget}");
             Console.WriteLine($"  Intent: {spec.Intent}");
             Console.WriteLine($"  ComponentName: {spec.ComponentName}");
             Console.WriteLine($"  Category: {spec.Category}");

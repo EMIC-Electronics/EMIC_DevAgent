@@ -3,11 +3,12 @@
 ## Indice
 
 1. [Vision General](#vision-general)
-2. [Diagrama de Flujo Principal](#diagrama-de-flujo-principal)
-3. [Separacion Core/CLI](#separacion-corecli)
-4. [Inyeccion de Dependencias (DI)](#inyeccion-de-dependencias-di)
-5. [Framework Base de Agentes](#framework-base-de-agentes)
-6. [Agentes del Sistema](#agentes-del-sistema)
+2. [Menu Inicial de Clasificacion](#menu-inicial-de-clasificacion)
+3. [Diagrama de Flujo Principal](#diagrama-de-flujo-principal)
+4. [Separacion Core/CLI](#separacion-corecli)
+5. [Inyeccion de Dependencias (DI)](#inyeccion-de-dependencias-di)
+6. [Framework Base de Agentes](#framework-base-de-agentes)
+7. [Agentes del Sistema](#agentes-del-sistema)
    - [OrchestratorAgent](#orchestratoragent)
    - [AnalyzerAgent](#analyzeragent)
    - [ApiGeneratorAgent](#apigeneratoragent)
@@ -17,19 +18,19 @@
    - [RuleValidatorAgent](#rulevalidatoragent)
    - [MaterializerAgent](#materializeragent)
    - [CompilationAgent](#compilationagent)
-7. [Validadores Especializados](#validadores-especializados)
-8. [Servicios](#servicios)
+8. [Validadores Especializados](#validadores-especializados)
+9. [Servicios](#servicios)
    - [LLM (Claude API)](#llm-claude-api)
    - [SDK Scanner](#sdk-scanner)
    - [Templates](#templates)
    - [Compilacion y SourceMapper](#compilacion-y-sourcemapper)
    - [Metadata](#metadata)
    - [Validation Service](#validation-service)
-9. [Modelos de Datos](#modelos-de-datos)
-10. [Configuracion](#configuracion)
-11. [Implementacion CLI](#implementacion-cli)
-12. [Estructura del Proyecto](#estructura-del-proyecto)
-13. [Flujo Completo de Ejecucion](#flujo-completo-de-ejecucion)
+10. [Modelos de Datos](#modelos-de-datos)
+11. [Configuracion](#configuracion)
+12. [Implementacion CLI](#implementacion-cli)
+13. [Estructura del Proyecto](#estructura-del-proyecto)
+14. [Flujo Completo de Ejecucion](#flujo-completo-de-ejecucion)
 
 ---
 
@@ -44,6 +45,164 @@ El agente recibe un prompt en lenguaje natural del usuario, realiza desambiguaci
 
 ---
 
+## Menu Inicial de Clasificacion
+
+Antes de cualquier llamada al LLM, el sistema presenta un **menu interactivo hardcodeado de 2 niveles** que identifica la capa de abstraccion y el sub-tipo. Esto elimina ambiguedad desde el inicio y establece `IntentType` y `ProjectType` sin depender del LLM.
+
+### Nivel 1 — Capa de abstraccion
+
+```
+¿Que desea desarrollar?
+
+  1. Sistema distribuido
+     Red de dispositivos coordinados: arquitectura maestro/esclavo,
+     control descentralizado, monitoreo distribuido, o redes de
+     sensores y actuadores que operan de forma conjunta.
+
+  2. Dispositivo integrado
+     Equipo funcional autonomo que combina multiples capacidades en un
+     solo hardware: controlador, datalogger, monitor remoto, gateway,
+     interfaz HMI, o cualquier combinacion de funciones.
+
+  3. Modulo EMIC
+     Nodo del ecosistema modular EMIC con una funcion principal
+     (sensor, actuador, display, teclado, comunicacion) y funciones
+     auxiliares (timers, LEDs). Incluye EMIC-Bus (I2C) por defecto.
+     No implementa logica de negocio: es hardware reutilizable cuya
+     aplicacion se define en la etapa de integracion.
+
+  4. API EMIC
+     Capa de abstraccion de alto nivel que expone funciones, variables
+     y eventos para la logica de negocio. Los eventos son callbacks
+     declarados pero no implementados, que se resuelven durante la
+     integracion. Consume drivers y HAL internamente.
+
+  5. Driver EMIC
+     Capa de control de hardware externo al microcontrolador: sensores,
+     actuadores, memorias, transceivers, displays. Accede a la capa HAL
+     para los recursos internos del micro y expone funciones para ser
+     consumidas por la capa API.
+
+  6. Otro (especificar)
+```
+
+### Nivel 2 — Sub-tipo (segun seleccion de Nivel 1)
+
+**Opcion 1 → Sistema distribuido:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Control de lazo cerrado | Sensores, controlador y actuadores en nodos separados con retroalimentacion en tiempo real |
+| 2 | Red de monitoreo | Nodos sensores con concentrador/gateway para recoleccion y visualizacion de datos |
+| 3 | Control maestro/esclavo | Nodo central que coordina y comanda nodos perifericos |
+| 4 | Sistema hibrido | Combinacion de control, monitoreo y comunicacion distribuida |
+| 5 | Otro (especificar) | |
+
+**Opcion 2 → Dispositivo integrado:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Controlador | Sistema de control con entradas de sensores y salidas a actuadores |
+| 2 | Datalogger | Adquisicion, procesamiento y almacenamiento de datos |
+| 3 | Monitor remoto | Sensado de variables con transmision de datos a sistema externo |
+| 4 | Gateway / Concentrador | Recibe datos de multiples fuentes, procesa y/o reenvia |
+| 5 | Interfaz HMI | Display, teclado y control local para operacion del usuario |
+| 6 | Dispositivo multi-funcion | Combinacion personalizada de funciones |
+| 7 | Otro (especificar) | |
+
+**Opcion 3 → Modulo EMIC:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Sensor | Medicion de magnitud fisica (temperatura, presion, humedad, etc.) |
+| 2 | Actuador | Control de dispositivo externo (motor, rele, valvula, calefactor, etc.) |
+| 3 | Display | Presentacion visual (LCD, OLED, 7 segmentos, LED matrix, etc.) |
+| 4 | Teclado / Entrada | Interfaz de usuario (botones, encoder rotativo, touch, etc.) |
+| 5 | Comunicacion | Bridge o gateway de protocolo (RS485, WiFi, Bluetooth, LoRa, etc.) |
+| 6 | Indicador | Señalizacion simple (LEDs, buzzer, alarma visual/sonora, etc.) |
+| 7 | Otro (especificar) | |
+
+**Opcion 4 → API EMIC:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Procesamiento de señales | Filtros, conversiones, algoritmos, transformaciones de datos |
+| 2 | Protocolo de comunicacion | Abstraccion de protocolos de alto nivel (Modbus, MQTT, HTTP, etc.) |
+| 3 | Almacenamiento | Logging, gestion de EEPROM, sistema de archivos, buffers circulares |
+| 4 | Interfaz de usuario | Menus, pantallas, gestion de indicadores y entradas |
+| 5 | Control | PID, maquinas de estados, secuenciadores, automatismos |
+| 6 | Otro (especificar) | |
+
+**Opcion 5 → Driver EMIC:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Sensor | Chip sensor (LM35, BME280, MPU6050, MAX6675, etc.) |
+| 2 | Conversor | ADC/DAC externo, expansor de I/O (MCP3008, PCF8574, etc.) |
+| 3 | Memoria | EEPROM, Flash SPI, tarjeta SD, FRAM, etc. |
+| 4 | Display | Controlador de display (HD44780, SSD1306, MAX7219, etc.) |
+| 5 | Transceptor / Comunicacion | Modulo de comunicacion (MCP2200, ESP8266, SX1278, HC-05, etc.) |
+| 6 | Motor / Actuador | Driver de potencia (L298, DRV8825, ULN2003, etc.) |
+| 7 | Otro (especificar) | |
+
+### Mapeo Menu → Enums
+
+| Nivel 1 | → IntentType | → ProjectType |
+|---------|-------------|---------------|
+| Sistema distribuido | CreateModule | DistributedSystem |
+| Dispositivo integrado | CreateModule | Monolithic |
+| Modulo EMIC | CreateModule | EmicModule |
+| API EMIC | CreateApi | (no aplica) |
+| Driver EMIC | CreateDriver | (no aplica) |
+
+| Nivel 2 (Modulo EMIC) | → ModuleRole |
+|----------------------|-------------|
+| Sensor | Sensor |
+| Actuador | Actuator |
+| Display | Display |
+| Teclado/Entrada | Input |
+| Comunicacion | Communication |
+| Indicador | Indicator |
+
+| Nivel 2 (Sistema distribuido) | → SystemKind |
+|-------------------------------|-------------|
+| Control de lazo cerrado | ClosedLoopControl |
+| Red de monitoreo | Monitoring |
+| Control maestro/esclavo | RemoteControl |
+| Sistema hibrido | Combined |
+
+| Nivel 2 (Dispositivo integrado) | → DeviceFunction |
+|--------------------------------|-----------------|
+| Controlador | Controller |
+| Datalogger | Datalogger |
+| Monitor remoto | RemoteMonitor |
+| Gateway | Gateway |
+| Interfaz HMI | Hmi |
+| Multi-funcion | MultiFunction |
+
+| Nivel 2 (API EMIC) | → ApiType |
+|--------------------|----------|
+| Procesamiento de señales | SignalProcessing |
+| Protocolo de comunicacion | CommunicationProtocol |
+| Almacenamiento | Storage |
+| Interfaz de usuario | UserInterface |
+| Control | Control |
+
+| Nivel 2 (Driver EMIC) | → DriverTarget |
+|-----------------------|---------------|
+| Sensor | Sensor |
+| Conversor | Converter |
+| Memoria | Memory |
+| Display | Display |
+| Transceptor | Transceiver |
+| Motor / Actuador | MotorActuator |
+
+### Implementacion
+
+El menu se ejecuta en `OrchestratorAgent.RunInitialMenuAsync()` **antes** de `ClassifyIntentAsync()`. Los resultados se almacenan en `context.Properties` con claves `MenuIntent`, `MenuProjectType`, `MenuModuleRole`, `MenuSystemKind`, `MenuDeviceFunction`, `MenuApiType`, `MenuDriverTarget`. Luego se pasan como historial de conversacion al LLM para que no re-pregunte lo ya resuelto.
+
+---
+
 ## Diagrama de Flujo Principal
 
 ```
@@ -51,26 +210,32 @@ PROMPT USUARIO
     |
     v
 [OrchestratorAgent]
-    |-- 1. ClassifyIntentAsync (LLM ligero → key=value)
-    |       → PromptAnalysis { Intent, ComponentName, Category }
+    |-- 1. RunInitialMenuAsync (hardcoded, 2 niveles)
+    |       |-- Nivel 1: Capa de abstraccion (6 opciones)
+    |       |-- Nivel 2: Sub-tipo (segun seleccion)
+    |       → IntentType, ProjectType, ModuleRole/SystemKind/DeviceFunction/ApiType/DriverTarget
     |
-    |-- 2. RunDisambiguationAsync (LLM-driven, interactivo)
-    |       |-- Fase 0: Tipo de proyecto (hardcoded, siempre primero)
-    |       |-- Fase 1-3: LLM genera QUESTION o COMPLETE
+    |-- 2. ClassifyIntentAsync (LLM ligero → key=value)
+    |       → PromptAnalysis { ComponentName, Category, Description }
+    |       (Intent viene del menu, no del LLM)
+    |
+    |-- 3. RunDisambiguationAsync (LLM-driven, detalles tecnicos)
+    |       |-- Recibe historial del menu (no re-pregunta)
+    |       |-- LLM genera QUESTION o COMPLETE
     |       |-- Loop max 10 iteraciones
     |       → DetailedSpecification { ProjectType, ModuleRole, ... }
     |
-    |-- 3. DisplaySpecificationAsync (muestra spec al usuario)
+    |-- 4. DisplaySpecificationAsync (muestra spec al usuario)
     |
-    |-- 4. [Si DisambiguationOnly] → STOP aqui
+    |-- 5. [Si DisambiguationOnly] → STOP aqui
     |
-    |-- 5. SDK Scan (DESPUES de desambiguacion)
+    |-- 6. SDK Scan (DESPUES de desambiguacion)
     |       → SdkInventory { Apis, Drivers, Modules, HalComponents }
     |
-    |-- 6. CreateGenerationPlan (top-down)
+    |-- 7. CreateGenerationPlan (top-down)
     |       → GenerationPlan { FilesToGenerate, Dependencies }
     |
-    |-- 7. Ejecuta sub-agentes bottom-up (segun intent):
+    |-- 8. Ejecuta sub-agentes bottom-up (segun intent):
     |
     v
 [AnalyzerAgent]

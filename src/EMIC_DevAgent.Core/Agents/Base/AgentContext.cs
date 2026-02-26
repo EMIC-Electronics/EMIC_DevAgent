@@ -59,6 +59,7 @@ public enum ModuleRole
     Sensor,
     Actuator,
     Display,
+    Input,
     Indicator,
     Communication,
     Other
@@ -74,11 +75,49 @@ public enum SystemKind
     Other
 }
 
+public enum DeviceFunction
+{
+    Unknown,
+    Controller,
+    Datalogger,
+    RemoteMonitor,
+    Gateway,
+    Hmi,
+    MultiFunction,
+    Other
+}
+
+public enum ApiType
+{
+    Unknown,
+    SignalProcessing,
+    CommunicationProtocol,
+    Storage,
+    UserInterface,
+    Control,
+    Other
+}
+
+public enum DriverTarget
+{
+    Unknown,
+    Sensor,
+    Converter,
+    Memory,
+    Display,
+    Transceiver,
+    MotorActuator,
+    Other
+}
+
 public class DetailedSpecification
 {
     public ProjectType ProjectType { get; set; }
     public ModuleRole ModuleRole { get; set; }
     public SystemKind SystemKind { get; set; }
+    public DeviceFunction DeviceFunction { get; set; }
+    public ApiType ApiType { get; set; }
+    public DriverTarget DriverTarget { get; set; }
     public IntentType Intent { get; set; }
     public string ComponentName { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
