@@ -238,6 +238,34 @@ public class OrchestratorAgent : AgentBase
         const int maxIterations = 10;
         var conversationHistory = new List<DisambiguationExchange>();
 
+        // --- FASE 0: Tipo de proyecto (hardcoded, siempre se pregunta primero) ---
+        var phase0Question = new DisambiguationQuestion
+        {
+            Question = "¿Que tipo de proyecto desea crear?"
+        };
+        phase0Question.Options.Add("Proyecto monolitico (una sola placa)");
+        phase0Question.Options.Add("Modulo EMIC (nodo del sistema modular)");
+        phase0Question.Options.Add("Sistema distribuido (multiples modulos EMIC)");
+        phase0Question.Options.Add("Otro (especificar)");
+
+        context.PendingQuestions.Add(phase0Question);
+        Logger.LogInformation("Asking Phase 0 question: project type");
+        var phase0Answer = await _userInteraction.AskQuestionAsync(phase0Question, ct);
+        phase0Question.Answer = phase0Answer;
+
+        var phase0Exchange = new DisambiguationExchange
+        {
+            Question = phase0Question.Question,
+            Answer = phase0Answer,
+            Reason = "Determinar la arquitectura del proyecto"
+        };
+        foreach (var opt in phase0Question.Options)
+            phase0Exchange.Options.Add(opt);
+        conversationHistory.Add(phase0Exchange);
+
+        Logger.LogInformation("Phase 0 answer: {Answer}", Truncate(phase0Answer, 100));
+
+        // --- LLM loop for remaining phases ---
         for (int i = 0; i < maxIterations; i++)
         {
             ct.ThrowIfCancellationRequested();
@@ -475,7 +503,7 @@ public class OrchestratorAgent : AgentBase
             else if (l.StartsWith("OPTIONS:", StringComparison.OrdinalIgnoreCase))
             {
                 var optStr = l["OPTIONS:".Length..].Trim();
-                foreach (var opt in optStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                foreach (var opt in SplitOptionsRespectingParentheses(optStr))
                     options.Add(opt);
             }
             else if (l.StartsWith("REASON:", StringComparison.OrdinalIgnoreCase))
@@ -853,6 +881,38 @@ public class OrchestratorAgent : AgentBase
         }
 
         return depth == 0 ? i : -1;
+    }
+
+    /// <summary>
+    /// Splits an OPTIONS string by commas, but respects parentheses nesting.
+    /// E.g. "Sensor digital (DS18B20, SHT30), Otro (especificar)" → 2 options, not 4.
+    /// </summary>
+    private static List<string> SplitOptionsRespectingParentheses(string input)
+    {
+        var result = new List<string>();
+        var depth = 0;
+        var start = 0;
+
+        for (int i = 0; i < input.Length; i++)
+        {
+            var c = input[i];
+            if (c == '(') depth++;
+            else if (c == ')') depth--;
+            else if (c == ',' && depth == 0)
+            {
+                var option = input[start..i].Trim();
+                if (option.Length > 0)
+                    result.Add(option);
+                start = i + 1;
+            }
+        }
+
+        // Last segment
+        var last = input[start..].Trim();
+        if (last.Length > 0)
+            result.Add(last);
+
+        return result;
     }
 
     #endregion
