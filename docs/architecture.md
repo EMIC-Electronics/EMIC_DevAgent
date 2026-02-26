@@ -126,12 +126,104 @@ Antes de cualquier llamada al LLM, el sistema presenta un **menu interactivo har
 
 | # | Opcion | Descripcion |
 |---|--------|-------------|
-| 1 | Procesamiento de señales | Filtros, conversiones, algoritmos, transformaciones de datos |
-| 2 | Protocolo de comunicacion | Abstraccion de protocolos de alto nivel (Modbus, MQTT, HTTP, etc.) |
-| 3 | Almacenamiento | Logging, gestion de EEPROM, sistema de archivos, buffers circulares |
-| 4 | Interfaz de usuario | Menus, pantallas, gestion de indicadores y entradas |
-| 5 | Control | PID, maquinas de estados, secuenciadores, automatismos |
+| 1 | Adquisicion y medicion | Lectura y procesamiento de magnitudes fisicas: abstraccion de ADC, sensores analogicos, celdas de carga. Consume drivers de conversion y sensores. Ej: ADC, LoadCell, AnalogInput. |
+| 2 | Comunicacion | Interfaces de comunicacion cableada o inalambrica: USB, I2C, RS485, SPI, WiFi, Bluetooth, LoRa. Gestiona streams de E/S, buffers y parseo de tramas. Ej: USB_API, EMICBus. |
+| 3 | Protocolos de aplicacion | Protocolos de alto nivel sobre una capa de comunicacion: Modbus, MQTT, HTTP/REST. Independientes del medio fisico; se montan sobre APIs de comunicacion. Ej: Modbus, DinaModbus. |
+| 4 | Temporizado y planificacion | Temporizadores por software con eventos, timeouts, auto-reload. Soporta multiples instancias independientes. Ej: timer_api (multi-instancia con name=). |
+| 5 | Indicadores y E/S digital | Abstraccion de perifericos digitales simples: LEDs con patrones de parpadeo, entradas digitales con anti-rebote y eventos, buzzers, señalizacion. Ej: LEDs, DigitalInputs. |
+| 6 | Procesamiento de señales | Algoritmos de procesamiento puro sin acceso directo a hardware: filtros digitales (IIR, FIR, promedio movil), conversiones de unidades, deteccion de umbrales, interpolacion. |
+| 7 | Control y automatizacion | Lazos de control cerrado (PID), maquinas de estados configurables, secuenciadores, control ON/OFF con histeresis. |
+| 8 | Almacenamiento y persistencia | Gestion de datos en memoria no volatil: logging, EEPROM, buffers circulares persistentes, sistema de archivos en SD, parametros de configuracion. |
+| 9 | Otro (especificar) | |
+
+#### Nivel 3 — Sub-tipo de API (segun seleccion de Nivel 2)
+
+**API 4.1 → Adquisicion y medicion:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Temperatura | Sensor de temperatura: analogico (LM35, NTC), digital (DS18B20), termopar (MAX6675), RTD (PT100) |
+| 2 | Presion / Fuerza / Peso | Celda de carga (HX711, ADS1231), sensor de presion, galga extensometrica |
+| 3 | Humedad / Ambiente | Sensor ambiental: humedad (DHT22, SHT30), calidad de aire, luminosidad (LDR, BH1750) |
+| 4 | Posicion / Movimiento | Encoder incremental, acelerometro (MPU6050), giroscopio, sensor de proximidad |
+| 5 | Corriente / Voltaje | Medicion electrica: sensor de corriente (ACS712), divisor de voltaje, medicion de potencia |
+| 6 | ADC generico | Conversion analogico-digital generica configurable, multi-canal, con PGA opcional |
+| 7 | Otro (especificar) | |
+
+**API 4.2 → Comunicacion:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Serial / USB | Comunicacion serial asincrona via UART o USB-UART bridge (MCP2200, FT232, CP2102) |
+| 2 | I2C / EMIC-Bus | Bus I2C para comunicacion entre modulos EMIC o con perifericos externos |
+| 3 | SPI | Bus SPI para perifericos de alta velocidad (memorias Flash, ADC externos, displays) |
+| 4 | RS485 / RS232 | Comunicacion industrial cableada half/full duplex |
+| 5 | WiFi | Comunicacion inalambrica TCP/IP via modulo WiFi (ESP8266, ESP32) |
+| 6 | Bluetooth / BLE | Comunicacion inalambrica de corto alcance (HC-05, HM-10, ESP32-BLE) |
+| 7 | LoRa / SubGHz | Comunicacion inalambrica de largo alcance y bajo consumo (SX1278, SX1262) |
+| 8 | Otro (especificar) | |
+
+**API 4.3 → Protocolos de aplicacion:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Modbus RTU/TCP | Protocolo industrial Modbus sobre serial (RTU) o TCP/IP. Master o Slave. |
+| 2 | MQTT | Protocolo pub/sub para IoT sobre TCP/IP. Requiere API de comunicacion WiFi/Ethernet. |
+| 3 | HTTP / REST | Servidor o cliente HTTP para APIs REST. Requiere stack TCP/IP. |
+| 4 | Protocolo EMIC-Bus | Protocolo nativo de comunicacion entre modulos EMIC sobre I2C. Tags + mensajes. |
+| 5 | Protocolo propietario | Protocolo de aplicacion personalizado sobre cualquier medio de transporte. |
 | 6 | Otro (especificar) | |
+
+**API 4.4 → Temporizado y planificacion:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Timer de eventos | Temporizador con callback al expirar. Modos: timer unico (T) y auto-reload (A). |
+| 2 | Scheduler / Planificador | Ejecuta tareas a intervalos regulares configurables. Multiples slots independientes. |
+| 3 | Timeout / Watchdog SW | Deteccion de inactividad o timeout con accion de recuperacion configurable. |
+| 4 | Generador de pulsos | Generacion de señales periodicas o unicas por software (no PWM de hardware). |
+| 5 | Otro (especificar) | |
+
+**API 4.5 → Indicadores y E/S digital:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | LEDs / Indicadores luminosos | Control de LEDs con patrones: encendido, parpadeo, secuencias, dimming por software. |
+| 2 | Botones / Teclado | Entradas digitales con anti-rebote, deteccion de pulsacion corta/larga, matriz de teclas. |
+| 3 | Encoder rotativo | Lectura de encoder incremental con deteccion de direccion y pulsador integrado. |
+| 4 | Buzzer / Alarma sonora | Generacion de tonos y patrones sonoros para señalizacion. |
+| 5 | Rele / Salida digital | Control de salidas digitales de potencia con temporizacion opcional. |
+| 6 | Otro (especificar) | |
+
+**API 4.6 → Procesamiento de señales:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Filtro digital (IIR/FIR/promedio) | Filtrado de señales: paso bajo, paso alto, paso banda, promedio movil, mediana. |
+| 2 | Conversion y calibracion | Conversion de unidades, linealizacion por tabla/polinomio, calibracion multi-punto. |
+| 3 | Deteccion de umbrales y alarmas | Cruce de umbral con histeresis, deteccion de picos, alarmas configurables. |
+| 4 | Transformada / Analisis espectral | FFT, analisis de frecuencia, descomposicion de señales periodicas. |
+| 5 | Otro (especificar) | |
+
+**API 4.7 → Control y automatizacion:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | PID | Controlador PID con anti-windup, limites de salida y parametros configurables en runtime. |
+| 2 | Maquina de estados configurable | Motor de estados/transiciones con eventos, condiciones y acciones programables. |
+| 3 | Secuenciador | Ejecucion secuencial de pasos con tiempos, condiciones de avance y bucles. |
+| 4 | Control ON/OFF con histeresis | Control todo/nada con banda muerta configurable y proteccion de ciclo minimo. |
+| 5 | Otro (especificar) | |
+
+**API 4.8 → Almacenamiento y persistencia:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Buffer circular / FIFO | Almacenamiento temporal en RAM con gestion de desborde y lectura por lotes. |
+| 2 | Logging a memoria | Registro de eventos o datos con timestamp en memoria no volatil. |
+| 3 | EEPROM / Flash | Lectura/escritura de parametros de configuracion en memoria no volatil interna. |
+| 4 | Tarjeta SD / Sistema de archivos | Almacenamiento masivo con sistema de archivos FAT16/FAT32. |
+| 5 | Otro (especificar) | |
 
 **Opcion 5 → Driver EMIC:**
 
@@ -182,11 +274,16 @@ Antes de cualquier llamada al LLM, el sistema presenta un **menu interactivo har
 
 | Nivel 2 (API EMIC) | → ApiType |
 |--------------------|----------|
+| Adquisicion y medicion | Measurement (*) |
+| Comunicacion | Communication (*) |
+| Protocolos de aplicacion | ApplicationProtocol (*) |
+| Temporizado y planificacion | Timing (*) |
+| Indicadores y E/S digital | DigitalIO (*) |
 | Procesamiento de señales | SignalProcessing |
-| Protocolo de comunicacion | CommunicationProtocol |
-| Almacenamiento | Storage |
-| Interfaz de usuario | UserInterface |
-| Control | Control |
+| Control y automatizacion | Control |
+| Almacenamiento y persistencia | Storage |
+
+(*) Valores nuevos que requieren actualizar el enum `ApiType` en `AgentContext.cs`.
 
 | Nivel 2 (Driver EMIC) | → DriverTarget |
 |-----------------------|---------------|
