@@ -806,24 +806,625 @@ expone una funcion `{name}_getOutput()` para encadenamiento.
 
 ---
 
+### 5.5. Variante E — Integracion via Discovery (Middleware seleccionable por el integrador)
+
+En las variantes anteriores, el **desarrollador** decide que middleware usar y como
+conectarlo. En esta variante, el **desarrollador** solo declara que middlewares estan
+**disponibles** para un modulo, y es el **integrador** quien los selecciona, instancia
+y conecta desde el editor EMIC, como parte de la logica de aplicacion.
+
+**Quien conecta**: El integrador (desde el editor EMIC / program.xml)
+**Cuando se resuelve**: Integration-time (despues de Discovery, antes de Generate)
+**Actores**:
+- **Desarrollador del SDK**: Incluye middleware disponibles en generate.emic
+- **Sistema EMIC (Discovery)**: Indexa middleware y funciones compatibles
+- **Integrador**: Elige, instancia y conecta desde el editor
+
+#### Flujo completo
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  FASE 1: DESARROLLO (por el desarrollador del SDK)                 │
+│                                                                     │
+│  generate.emic:                                                     │
+│    EMIC:setInput(DEV:_api/Sensors/Temperature/Temperature.emic,    │
+│                  driver=LM35)                                       │
+│    EMIC:setInput(DEV:_middleware/Filters/MovingAverage/...)  ←(*)   │
+│    EMIC:setInput(DEV:_middleware/Detectors/ThresholdDetector/...) ← │
+│    EMIC:setInput(DEV:_middleware/Converters/LinearScale/...)  ←     │
+│                                                                     │
+│  (*) Sin parametros — solo habilita disponibilidad                  │
+└─────────────────────────────────────┬───────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  FASE 2: DISCOVERY (automatico por el sistema EMIC)                │
+│                                                                     │
+│  1. Parsea cada middleware incluido → extrae tags @mw-*             │
+│  2. Parsea cada API incluida → identifica funciones I/O compatibles │
+│  3. Genera lista de middleware disponibles en el sidebar             │
+│  4. Genera lista de funciones "conectables" (entradas y salidas)    │
+└─────────────────────────────────────┬───────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  FASE 3: INTEGRACION (por el integrador en el editor EMIC)         │
+│                                                                     │
+│  Sidebar muestra:                                                   │
+│   ┌─ Middleware Disponibles ──────────────────────────┐             │
+│   │  ▸ MovingAverage — Filtro promedio movil           │             │
+│   │  ▸ ThresholdDetector — Detector de umbral          │             │
+│   │  ▸ LinearScale — Conversion lineal                 │             │
+│   └───────────────────────────────────────────────────┘             │
+│                                                                     │
+│  El integrador arrastra "ThresholdDetector" al workspace.           │
+│  El sistema solicita:                                               │
+│    - Nombre de instancia: "TempAlarm"                               │
+│    - Entrada: [getTemperature ▼] (lista de funciones compatibles)   │
+│    - Salida:  [eAlarm ▼]         (lista de eventos compatibles)     │
+│    - threshold: 80  (editable, valor por defecto del middleware)     │
+│    - hysteresis: 5  (editable)                                      │
+│                                                                     │
+│  El sistema infiere dataType=int32_t del prototipo de               │
+│  getTemperature() → int32_t getTemperature(void)                    │
+│                                                                     │
+│  Al confirmar, el sistema agrega al sidebar:                        │
+│   ┌─ TempAlarm (ThresholdDetector) ───────────────────┐             │
+│   │  ▸ fn: setThreshold_TempAlarm(int32_t)            │             │
+│   │  ▸ fn: setHysteresis_TempAlarm(int32_t)           │             │
+│   │  ▸ fn: getState_TempAlarm() → uint8_t             │             │
+│   │  ▸ var: threshold_TempAlarm (int32_t)             │             │
+│   │  ▸ ev: eThresholdCrossed_TempAlarm(int32_t)       │             │
+│   └───────────────────────────────────────────────────┘             │
+└─────────────────────────────────────┬───────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  FASE 4: GENERATE (automatico por el sistema EMIC)                 │
+│                                                                     │
+│  El sistema genera codigo equivalente a Variante A:                 │
+│    EMIC:setInput(DEV:_middleware/.../ThresholdDetector.emic,        │
+│                  name=TempAlarm, inputFn=getTemperature,            │
+│                  outputFn=eAlarm, threshold=80, hysteresis=5,      │
+│                  dataType=int32_t)                                  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### Paso 1: El desarrollador habilita middleware en generate.emic
+
+El desarrollador del modulo incluye los middleware que considera utiles para
+el integrador, **sin parametros** (solo registra su disponibilidad):
+
+**generate.emic** (Modulo — escrito por el desarrollador):
+```
+// Hardware
+EMIC:setInput(DEV:_pcb/pcb.emic, pcb=HRD_TEMP_SENSOR_V1)
+
+// APIs (con sus drivers)
+EMIC:setInput(DEV:_api/Sensors/Temperature/Temperature.emic, driver=LM35)
+EMIC:setInput(DEV:_api/Timers/timer_api.emic, name=1)
+EMIC:setInput(DEV:_api/Indicators/LEDs/led.emic, name=Alarm, pin=Led1)
+EMIC:setInput(DEV:_api/Wired_Communication/EMICBus/EMICBus.emic, port=2, frameID=0)
+
+// Middleware disponibles para el integrador (sin parametros)
+EMIC:setInput(DEV:_middleware/Filters/MovingAverage/MovingAverage.emic)
+EMIC:setInput(DEV:_middleware/Filters/Median/Median.emic)
+EMIC:setInput(DEV:_middleware/Detectors/ThresholdDetector/ThresholdDetector.emic)
+EMIC:setInput(DEV:_middleware/Converters/LinearScale/LinearScale.emic)
+
+// System
+EMIC:setInput(SYS:usedFunction.emic)
+EMIC:setInput(SYS:usedEvent.emic)
+EMIC:setInput(DEV:_main/main.emic)
+```
+
+**Nota**: Al no pasar parametros, el middleware no genera codigo en esta fase.
+Solo se ejecuta la parte de Discovery metadata del archivo `.emic`. El middleware
+debe tener una seccion condicional que solo genera codigo cuando recibe `name=`:
+
+**MovingAverage.emic** (con seccion condicional):
+```
+// --- Seccion Discovery (siempre se ejecuta) ---
+// Los tags @mw-* se declaran en un bloque EMIC:json que Discovery parsea.
+EMIC:json(type = middleware)
+{
+    "name": "MovingAverage",
+    "category": "Filters",
+    "brief": "Filtro promedio movil de ventana fija",
+    "description": "Suaviza una señal calculando el promedio de las ultimas N muestras. Reduce ruido manteniendo la tendencia general.",
+    "parameters": [
+        {
+            "name": "windowSize",
+            "type": "uint8_t",
+            "default": "8",
+            "brief": "Cantidad de muestras en la ventana",
+            "options": ["4", "8", "16", "32", "64"]
+        }
+    ],
+    "input": {
+        "type": "numeric",
+        "accepts": ["int16_t", "int32_t", "uint16_t", "uint32_t", "float"],
+        "brief": "Señal a filtrar (lectura cruda del sensor o etapa anterior)"
+    },
+    "output": {
+        "type": "numeric",
+        "produces": "same_as_input",
+        "brief": "Señal filtrada (promedio movil)"
+    },
+    "provides": {
+        "functions": [
+            {
+                "name": "getOutput_{name}",
+                "signature": "{dataType} getOutput_{name}(void)",
+                "brief": "Retorna el ultimo valor filtrado"
+            },
+            {
+                "name": "reset_{name}",
+                "signature": "void reset_{name}(void)",
+                "brief": "Reinicia el buffer del filtro"
+            }
+        ],
+        "variables": [
+            {
+                "name": "filterCount_{name}",
+                "type": "uint8_t",
+                "brief": "Cantidad de muestras acumuladas"
+            }
+        ]
+    }
+}
+
+// --- Seccion Generacion (solo si name= fue provisto) ---
+EMIC:ifdef name
+    EMIC:copy(inc/MovingAverage.h > TARGET:inc/MovingAverage_.{name}..h,
+              name=.{name}., inputFn=.{inputFn}., outputFn=.{outputFn}.,
+              windowSize=.{windowSize}., dataType=.{dataType}.)
+
+    EMIC:copy(src/MovingAverage.c > TARGET:MovingAverage_.{name}..c,
+              name=.{name}., inputFn=.{inputFn}., outputFn=.{outputFn}.,
+              windowSize=.{windowSize}., dataType=.{dataType}.)
+
+    EMIC:define(main_includes.MovingAverage_.{name}.,MovingAverage_.{name}.)
+    EMIC:define(c_modules.MovingAverage_.{name}.,MovingAverage_.{name}.)
+    EMIC:define(inits.MovingAverage_.{name}.,MovingAverage_.{name}._init)
+    EMIC:define(polls.MovingAverage_.{name}.,MovingAverage_.{name}._poll)
+EMIC:endif
+```
+
+#### Paso 2: Discovery indexa middleware y funciones compatibles
+
+El proceso Discovery, al encontrar un bloque `EMIC:json(type = middleware)`,
+extrae la metadata y la agrega al inventario del modulo. Ademas, escanea
+todas las APIs incluidas para identificar **funciones conectables**:
+
+**Funciones de entrada potenciales** (funciones que retornan un valor numerico
+y no reciben parametros — patron getter):
+```
+Escaneando APIs del modulo...
+
+Encontradas funciones compatibles como ENTRADA de middleware:
+  [Temperature API]
+    int32_t getTemperature(void)        — @alias Temperature
+    int32_t getTemperatureRaw(void)     — @alias RawADC
+  [LoadCell API]
+    int32_t getWeight(void)             — @alias Weight
+    float   getWeightKg(void)           — @alias WeightKg
+```
+
+**Funciones/eventos de salida potenciales** (funciones void con un parametro
+numerico — patron callback/event):
+```
+Encontradas funciones compatibles como SALIDA de middleware:
+  [Temperature API]
+    extern void eTemperatureReady(int32_t value)  — @alias TempReady
+    extern void eOverTemperature(int32_t value)   — @alias OverTemp
+  [LED API]
+    void setLed_Alarm(uint8_t state)              — @alias AlarmLed
+  [EMICBus API]
+    void sendValue(int32_t value)                 — @alias SendBus
+```
+
+**Criterios de compatibilidad de tipo**:
+- El `dataType` del middleware se infiere de la funcion de entrada seleccionada
+- Si la entrada retorna `int32_t`, el middleware opera en `int32_t`
+- La funcion de salida debe aceptar un parametro del mismo tipo (o compatible)
+- Si hay mismatch de tipos, el sistema muestra advertencia y sugiere un
+  middleware Converter como etapa intermedia
+
+#### Paso 3: El integrador selecciona y configura en el editor
+
+El sidebar del editor EMIC muestra una seccion **"Middleware"** con los
+componentes disponibles. Cada uno se puede expandir para ver su descripcion
+y parametros:
+
+```
+┌─ Recursos del Modulo ──────────────────────────────────┐
+│                                                         │
+│  ▾ Funciones                                            │
+│    ▸ getTemperature() → int32_t                         │
+│    ▸ setTime1(uint32_t, char)                           │
+│    ▸ setLed_Alarm(uint8_t)                              │
+│                                                         │
+│  ▾ Eventos                                              │
+│    ▸ eTemperatureReady(int32_t)                          │
+│    ▸ etOut1()                                            │
+│    ▸ eUSB(char*, streamIn_t*)                            │
+│                                                         │
+│  ▾ Variables                                            │
+│    ▸ Capacidad (float)                                  │
+│                                                         │
+│  ▾ Middleware Disponibles                  ◄── NUEVO    │
+│    ▸ MovingAverage — Filtro promedio movil               │
+│    ▸ Median — Filtro de mediana                          │
+│    ▸ ThresholdDetector — Detector de umbral              │
+│    ▸ LinearScale — Conversion lineal                     │
+│                                                         │
+│  ▾ Middleware Instanciados                 ◄── NUEVO    │
+│    (vacio — el integrador aun no ha instanciado ninguno)│
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+El integrador hace clic en "ThresholdDetector" y el sistema muestra un
+dialogo de configuracion:
+
+```
+┌─ Instanciar: ThresholdDetector ─────────────────────────┐
+│                                                          │
+│  Detector de umbral con histeresis. Genera un evento     │
+│  cuando el valor de entrada cruza el umbral configurado. │
+│                                                          │
+│  Nombre de instancia: [TempAlarm_________]               │
+│                                                          │
+│  Entrada (funcion que provee datos):                     │
+│  ┌──────────────────────────────────────────┐            │
+│  │ ▸ getTemperature() → int32_t        [✓]  │            │
+│  │   getTemperatureRaw() → int32_t     [ ]  │            │
+│  │   getWeight() → int32_t             [ ]  │            │
+│  │   getWeightKg() → float             [ ]  │            │
+│  └──────────────────────────────────────────┘            │
+│                                                          │
+│  Salida (funcion/evento que recibe el resultado):        │
+│  ┌──────────────────────────────────────────┐            │
+│  │ ▸ eOverTemperature(int32_t)         [✓]  │            │
+│  │   eTemperatureReady(int32_t)        [ ]  │            │
+│  │   sendValue(int32_t)                [ ]  │            │
+│  │   setLed_Alarm(uint8_t)             [⚠]  │  ← tipo   │
+│  └──────────────────────────────────────────┘  diferente │
+│                                                          │
+│  Tipo de dato: int32_t (autodetectado de getTemperature) │
+│                                                          │
+│  Parametros:                                             │
+│    threshold:  [80________] (modificable en runtime)     │
+│    hysteresis: [5_________] (modificable en runtime)     │
+│                                                          │
+│  [Cancelar]                              [Instanciar]    │
+└──────────────────────────────────────────────────────────┘
+```
+
+Al presionar **Instanciar**, el sistema:
+
+1. Registra la instancia con nombre `TempAlarm`, input=`getTemperature`,
+   output=`eOverTemperature`, dataType=`int32_t`, threshold=80, hysteresis=5.
+
+2. Agrega al sidebar las funciones, variables y eventos de la instancia:
+
+```
+│  ▾ Middleware Instanciados                               │
+│    ▾ TempAlarm (ThresholdDetector)                       │
+│      ▸ fn: setThreshold_TempAlarm(int32_t)               │
+│      ▸ fn: setHysteresis_TempAlarm(int32_t)              │
+│      ▸ fn: getState_TempAlarm() → uint8_t                │
+│      ▸ var: threshold_TempAlarm (int32_t)                │
+│      ▸ ev: eThresholdCrossed_TempAlarm(int32_t)          │
+```
+
+3. Estas funciones quedan disponibles para arrastrar a `program.xml`, como
+   cualquier otra funcion del SDK:
+
+```xml
+<!-- program.xml — el integrador puede usar las funciones del middleware -->
+<emic-event name="eThresholdCrossed_TempAlarm">
+    <!-- Encender LED de alarma cuando se cruza el umbral -->
+    <emic-function name="setLed_Alarm">
+        <emic-function-parameter type="uint8_t">
+            <emic-literal-numerical value="1"/>
+        </emic-function-parameter>
+    </emic-function>
+</emic-event>
+
+<emic-event name="etOut1">
+    <!-- Cada segundo, actualizar el threshold dinamicamente -->
+    <emic-function name="setThreshold_TempAlarm">
+        <emic-function-parameter type="int32_t">
+            <emic-literal-numerical value="85"/>
+        </emic-function-parameter>
+    </emic-function>
+</emic-event>
+```
+
+#### Paso 4: Generate produce codigo con los parametros resueltos
+
+Cuando el sistema ejecuta EMIC:Generate, procesa las instancias de middleware
+registradas por el integrador. Para cada instancia, genera una invocacion
+equivalente a la Variante A:
+
+**Invocacion generada automaticamente** (no la escribe el usuario):
+```
+EMIC:setInput(DEV:_middleware/Detectors/ThresholdDetector/ThresholdDetector.emic,
+              name=TempAlarm,
+              inputFn=getTemperature,
+              outputFn=eOverTemperature,
+              threshold=80,
+              hysteresis=5,
+              dataType=int32_t)
+```
+
+El resultado es identico al de la Variante A: codigo C expandido con las
+funciones de entrada y salida resueltas en compile-time.
+
+#### Metadata Discovery del middleware: `EMIC:json(type = middleware)`
+
+Cada middleware declara su metadata con un bloque `EMIC:json(type = middleware)`.
+Este bloque es parseado por el proceso Discovery para generar la lista del sidebar.
+
+**Estructura del JSON de metadata**:
+
+```javascript
+EMIC:json(type = middleware)
+{
+    // --- Identificacion ---
+    "name": "ThresholdDetector",          // Nombre del componente
+    "category": "Detectors",              // Categoria (subcarpeta en _middleware/)
+    "brief": "Detector de umbral con histeresis",
+    "description": "Genera un evento cuando el valor de entrada cruza ...",
+
+    // --- Parametros configurables ---
+    "parameters": [
+        {
+            "name": "threshold",
+            "type": "int32_t",            // Tipo C del parametro
+            "default": "100",             // Valor por defecto
+            "brief": "Valor de umbral para la deteccion",
+            "runtime": true               // true = modificable en runtime
+        },
+        {
+            "name": "hysteresis",
+            "type": "int32_t",
+            "default": "10",
+            "brief": "Banda muerta para evitar rebotes",
+            "runtime": true
+        }
+    ],
+
+    // --- Especificacion de entrada ---
+    "input": {
+        "type": "numeric",
+        "accepts": ["int16_t", "int32_t", "uint16_t", "uint32_t", "float"],
+        "brief": "Señal a monitorear"
+    },
+
+    // --- Especificacion de salida ---
+    "output": {
+        "type": "numeric",
+        "produces": "same_as_input",      // El tipo de salida = tipo de entrada
+        "brief": "Valor que cruzo el umbral",
+        "mode": "event"                   // "event" = solo se invoca al cruzar
+                                          // "continuous" = se invoca cada poll
+    },
+
+    // --- Funciones que la instancia expone al integrador ---
+    "provides": {
+        "functions": [
+            {
+                "name": "setThreshold_{name}",
+                "signature": "void setThreshold_{name}({dataType} value)",
+                "brief": "Modifica el umbral en runtime",
+                "runtime": true
+            },
+            {
+                "name": "setHysteresis_{name}",
+                "signature": "void setHysteresis_{name}({dataType} value)",
+                "brief": "Modifica la histeresis en runtime",
+                "runtime": true
+            },
+            {
+                "name": "getState_{name}",
+                "signature": "uint8_t getState_{name}(void)",
+                "brief": "Retorna 1 si el umbral esta activo, 0 si no"
+            }
+        ],
+        "variables": [
+            {
+                "name": "threshold_{name}",
+                "type": "{dataType}",
+                "brief": "Valor actual del umbral"
+            }
+        ],
+        "events": [
+            {
+                "name": "eThresholdCrossed_{name}",
+                "signature": "extern void eThresholdCrossed_{name}({dataType} value)",
+                "brief": "Se dispara cuando el valor cruza el umbral"
+            }
+        ]
+    }
+}
+```
+
+**Nota sobre `{name}` y `{dataType}` en el JSON**: Estos placeholders se
+resuelven **en el momento de la instanciacion** (Fase 3), no durante Discovery.
+Discovery los interpreta como plantillas y muestra los nombres con el sufijo
+`_{name}` que sera reemplazado por el nombre de instancia elegido.
+
+#### Deteccion automatica de funciones conectables
+
+El proceso Discovery clasifica las funciones de cada API en dos categorias:
+
+**Funciones de ENTRADA potenciales** (aptas como `inputFn`):
+- Firma: `{tipo_numerico} nombreFuncion(void)` — retorna valor, sin parametros
+- Ejemplos: `int32_t getTemperature(void)`, `float getWeight(void)`
+- Tag Discovery: `@fn` con retorno numerico y cero parametros
+- Se excluyen: funciones void, funciones con parametros, funciones de init/poll
+
+**Funciones/eventos de SALIDA potenciales** (aptas como `outputFn`):
+- Firma: `void nombreFuncion({tipo_numerico} valor)` — un parametro numerico
+- Firma alternativa: `extern void evento({tipo_numerico} valor)` — eventos
+- Ejemplos: `extern void eOverTemp(int32_t value)`, `void sendValue(int32_t v)`
+- Tag Discovery: `@fn` o `@fn extern` con un parametro numerico
+- Se excluyen: funciones con multiples parametros (a menos que sean eventos EMIC)
+
+**Verificacion de compatibilidad de tipos**:
+```
+inputFn retorna int32_t
+    → outputFn debe aceptar int32_t (compatible)
+    → outputFn acepta float? → WARNING: posible perdida de precision
+    → outputFn acepta uint8_t? → WARNING: posible truncamiento
+    → outputFn acepta char*? → ERROR: tipos incompatibles
+```
+
+#### Ejemplo completo: ThresholdDetector.h con Discovery tags
+
+```c
+#ifndef _THRESHOLD_DETECTOR_.{name}._H_
+#define _THRESHOLD_DETECTOR_.{name}._H_
+
+#include <stdint.h>
+
+// --- Funciones de I/O (resueltas por parametros) ---
+extern .{dataType}. .{inputFn}.(void);
+
+EMIC:ifdef usedEvent.eThresholdCrossed_.{name}.
+extern void eThresholdCrossed_.{name}.(.{dataType}. value);
+EMIC:endif
+
+// --- Init / Poll ---
+void ThresholdDetector_.{name}._init(void);
+void ThresholdDetector_.{name}._poll(void);
+
+// --- Funciones expuestas al integrador ---
+
+/**
+* @fn void setThreshold_.{name}.(.{dataType}. value);
+* @alias SetThreshold_.{name}.
+* @brief Modifica el umbral de deteccion en runtime
+* @param value Nuevo valor de umbral
+*/
+EMIC:ifdef usedFunction.setThreshold_.{name}.
+void setThreshold_.{name}.(.{dataType}. value);
+EMIC:endif
+
+/**
+* @fn void setHysteresis_.{name}.(.{dataType}. value);
+* @alias SetHysteresis_.{name}.
+* @brief Modifica la histeresis en runtime
+* @param value Nuevo valor de histeresis
+*/
+EMIC:ifdef usedFunction.setHysteresis_.{name}.
+void setHysteresis_.{name}.(.{dataType}. value);
+EMIC:endif
+
+/**
+* @fn uint8_t getState_.{name}.(void);
+* @alias GetState_.{name}.
+* @brief Retorna 1 si el umbral esta activo, 0 si no
+* @return Estado del detector (0 o 1)
+*/
+EMIC:ifdef usedFunction.getState_.{name}.
+uint8_t getState_.{name}.(void);
+EMIC:endif
+
+/**
+* @var .{dataType}. threshold_.{name}.;
+* @alias Threshold_.{name}.
+* @brief Valor actual del umbral de deteccion
+*/
+extern .{dataType}. threshold_.{name}.;
+
+#endif
+```
+
+#### Interaccion entre outputFn y eventos propios del middleware
+
+Un aspecto importante: el middleware tiene **dos mecanismos de salida**
+que pueden coexistir:
+
+1. **outputFn** (conexion directa): La funcion de salida seleccionada por el
+   integrador. Se llama cada vez que el middleware detecta la condicion.
+   Resuelve en compile-time via Variante A.
+
+2. **Eventos propios** (eThresholdCrossed_{name}): Evento EMIC estandar
+   protegido por `EMIC:ifdef usedEvent.*`. El integrador puede implementar
+   handlers en `program.xml` para logica adicional.
+
+```c
+// ThresholdDetector.c — ambos mecanismos
+void ThresholdDetector_.{name}._poll(void) {
+    .{dataType}. value = .{inputFn}.();
+
+    if (!active_.{name}.) {
+        if (value >= threshold_.{name}.) {
+            active_.{name}. = 1;
+
+            // Mecanismo 1: outputFn (conexion directa)
+            .{outputFn}.(value);
+
+            // Mecanismo 2: evento propio (si el integrador lo usa)
+            EMIC:ifdef usedEvent.eThresholdCrossed_.{name}.
+            eThresholdCrossed_.{name}.(value);
+            EMIC:endif
+        }
+    } else {
+        if (value < (threshold_.{name}. - hysteresis_.{name}.)) {
+            active_.{name}. = 0;
+        }
+    }
+}
+```
+
+Esto permite que el integrador:
+- Use el outputFn para encadenamiento con otra API/middleware (automatico)
+- Use el evento propio para logica adicional en program.xml (opcional)
+- O ambos simultaneamente
+
+#### Pros y contras
+
+| Ventaja | Desventaja |
+|---------|------------|
+| El integrador no necesita editar generate.emic ni codigo C | Requiere soporte de Discovery para `EMIC:json(type=middleware)` |
+| Experiencia visual en el editor (drag & drop, listas, config) | Requiere UI en el editor EMIC para instanciacion de middleware |
+| Auto-deteccion de tipos evita errores de configuracion | La logica de clasificacion de funciones I/O es nueva |
+| Las funciones del middleware se integran al sidebar como las de APIs | Mayor complejidad en el flujo de compilacion |
+| El desarrollador controla que middleware estan disponibles | El integrador puede crear combinaciones inválidas |
+| Parametros runtime editables desde program.xml | Necesita validacion de compatibilidad de tipos |
+| Zero overhead en runtime (genera Variante A internamente) | El JSON metadata agrega complejidad al middleware |
+| Consistente con el flujo de trabajo del integrador EMIC | Requiere desarrollo de la UI de instanciacion |
+
+---
+
 ## 6. Comparativa de Variantes
 
-| Criterio | A (Inline) | B (Macros) | C (Fn Ptrs) | D (Pipeline) |
-|----------|:----------:|:----------:|:-----------:|:------------:|
-| **Complejidad de uso** | Baja | Media | Baja | Alta |
-| **Desacoplamiento** | Bajo | Alto | Alto | Alto |
-| **Overhead runtime** | Cero | Cero | Bajo (ptrs) | Cero |
-| **Optimizacion compilador** | Maxima | Maxima | Limitada | Maxima |
-| **Quien decide las conexiones** | API | Modulo | API | Modulo |
-| **Multi-instancia** | Si | Si | Si | Si |
-| **Encadenamiento** | Manual | Manual | Manual | Nativo |
-| **Reconfigurable en runtime** | No | No | Si | No |
-| **Compatibilidad con EMIC actual** | Total | Requiere misMacros3 | Total | Parcial (*) |
-| **Dificultad de implementacion** | Baja | Media | Baja | Alta |
-| **Familiar para devs EMIC** | Si (como driver=) | Moderado | Si (como Stream) | No |
+| Criterio | A (Inline) | B (Macros) | C (Fn Ptrs) | D (Pipeline) | E (Discovery) |
+|----------|:----------:|:----------:|:-----------:|:------------:|:-------------:|
+| **Complejidad de uso** | Baja | Media | Baja | Alta | Muy baja |
+| **Desacoplamiento** | Bajo | Alto | Alto | Alto | Maximo |
+| **Overhead runtime** | Cero | Cero | Bajo (ptrs) | Cero | Cero |
+| **Optimizacion compilador** | Maxima | Maxima | Limitada | Maxima | Maxima |
+| **Quien decide las conexiones** | API | Modulo | API | Modulo | Integrador |
+| **Multi-instancia** | Si | Si | Si | Si | Si |
+| **Encadenamiento** | Manual | Manual | Manual | Nativo | Manual |
+| **Reconfigurable en runtime** | No | No | Si | No | Parcial (**) |
+| **Compatibilidad con EMIC actual** | Total | Requiere misMacros3 | Total | Parcial (*) | Total |
+| **Dificultad de implementacion** | Baja | Media | Baja | Alta | Alta (tooling) |
+| **Familiar para devs EMIC** | Si (como driver=) | Moderado | Si (como Stream) | No | Si (como Resources) |
+| **Requiere cambios en Editor** | No | No | No | No | Si (sidebar + UI) |
+| **Seleccion por integrador** | No | No | No | No | Si |
 
 (*) La forma simplificada de D es totalmente compatible; la forma completa
 requiere extensiones.
+
+(**) Los parametros marcados como `dynamic` en EMIC:json son modificables en
+runtime via program.xml; las conexiones (inputFn/outputFn) son compile-time.
 
 ### Recomendacion
 
@@ -840,6 +1441,11 @@ o testing unitario con mocks.
 
 **Variante D (simplificada)** como patron para documentar cadenas de procesamiento
 en proyectos complejos, pero sin implementar el orquestador completo inicialmente.
+
+**Variante E para maxima experiencia de usuario** cuando el objetivo es que el
+integrador (no el desarrollador) elija y configure los middlewares desde el editor
+visual. Es la mas potente pero requiere soporte en el tooling (Discovery, Editor UI,
+clasificacion automatica de funciones). Ideal como evolucion futura del sistema.
 
 ---
 
@@ -1134,5 +1740,10 @@ public enum MiddlewareType
 | **getOutput()** | Funcion publica que retorna el ultimo valor procesado (pull) |
 | **Wiring** | Conexion entre entrada/salida del middleware y funciones externas |
 | **misMacros3** | Diccionario de macros de 3 niveles del compilador EMIC (col1.col2.key) |
-| **Zero overhead** | Variantes A/B/D resuelven conexiones en compile-time, sin punteros |
+| **Zero overhead** | Variantes A/B/D/E resuelven conexiones en compile-time, sin punteros |
 | **Multi-instancia** | Soporte para N instancias independientes via parametro name= |
+| **EMIC:json(type=middleware)** | Bloque de metadatos JSON en .emic que describe un middleware para Discovery |
+| **Discovery-driven** | Variante E: el middleware se registra sin parametros y Discovery lo indexa para el integrador |
+| **Funcion compatible** | Funcion de API/driver cuya firma coincide con el tipo de dato del middleware (auto-deteccion) |
+| **Parametro dynamic** | Parametro del middleware que puede ser modificado en runtime via program.xml |
+| **Parametro static** | Parametro del middleware que se resuelve en compile-time (inputFn, outputFn, dataType) |
