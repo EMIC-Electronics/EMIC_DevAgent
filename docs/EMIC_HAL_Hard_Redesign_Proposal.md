@@ -1,30 +1,33 @@
 # Propuesta de Rediseño: Capas HAL y Hard del SDK EMIC
 
-> Documento de propuesta para evolucionar las capas HAL (Hardware Abstraction Layer)
-> y Hard (Hardware-Specific Implementation) del SDK EMIC, con el objetivo de soportar
+> Documento de propuesta para diseñar las capas HAL (Hardware Abstraction Layer)
+> y Hard (Hardware-Specific Implementation) del nuevo SDK EMIC, con el objetivo de soportar
 > multiples familias de microcontroladores, exponer informacion estructurada para
-> documentacion y agentes de IA, y mantener compatibilidad con proyectos existentes.
+> documentacion y agentes de IA mediante procesos EMIC especializados.
 
 ---
 
 ## Indice
 
-1. [Estado Actual](#1-estado-actual)
+1. [Estado Actual (referencia)](#1-estado-actual-referencia)
 2. [Problemas y Limitaciones](#2-problemas-y-limitaciones)
 3. [Objetivos del Rediseño](#3-objetivos-del-rediseño)
 4. [Arquitectura Propuesta](#4-arquitectura-propuesta)
-5. [Nuevo Sistema de Metadata: EMIC:json para HAL/Hard](#5-nuevo-sistema-de-metadata-emicjson-para-halhard)
-6. [Contrato de Periferico: La Interfaz Estandar](#6-contrato-de-periferico-la-interfaz-estandar)
-7. [Descriptor de MCU](#7-descriptor-de-mcu)
-8. [Descriptor de Pin Map](#8-descriptor-de-pin-map)
-9. [Ejemplos Completos](#9-ejemplos-completos)
-10. [Estrategia de Compatibilidad](#10-estrategia-de-compatibilidad)
+5. [Procesos EMIC: Parseo Multi-Proposito](#5-procesos-emic-parseo-multi-proposito)
+6. [Nuevo Sistema de Metadata: EMIC:json para HAL/Hard](#6-nuevo-sistema-de-metadata-emicjson-para-halhard)
+7. [Contrato de Periferico: La Interfaz Estandar](#7-contrato-de-periferico-la-interfaz-estandar)
+8. [Descriptor de MCU](#8-descriptor-de-mcu)
+9. [Descriptor de Pin Map](#9-descriptor-de-pin-map)
+10. [Ejemplos Completos](#10-ejemplos-completos)
 11. [Impacto en Capas Superiores](#11-impacto-en-capas-superiores)
 12. [Plan de Implementacion](#12-plan-de-implementacion)
 
 ---
 
-## 1. Estado Actual
+## 1. Estado Actual (referencia)
+
+> **Nota**: Esta seccion describe el SDK existente como referencia. El nuevo SDK
+> se diseña desde cero, sin necesidad de compatibilidad con esta estructura.
 
 ### Arquitectura vigente
 
@@ -152,11 +155,14 @@ informacion no esta codificada en el SDK.
 | 1 | **Multi-familia**: Soportar MCUs de distintas arquitecturas (PIC, ARM Cortex-M, ESP32, AVR, RISC-V) con el mismo SDK | Alta |
 | 2 | **Contrato de periferico**: Definir interfaces estandar que cada implementacion hard debe cumplir | Alta |
 | 3 | **Metadata para AI**: Exponer informacion estructurada sobre MCU, perifericos y pines para agentes de IA y DevAgent | Alta |
-| 4 | **Auto-documentacion**: Generar documentacion de capacidades a partir de la metadata del SDK | Media |
-| 5 | **Validacion de compatibilidad**: Verificar en compile-time que las APIs/drivers usados son compatibles con el MCU | Media |
-| 6 | **Gestion de recursos**: Rastrear asignacion de pines, canales, timers para detectar conflictos | Media |
-| 7 | **Compatibilidad retroactiva**: Mantener funcionamiento de proyectos existentes con el SDK actual | Alta |
+| 4 | **Procesos EMIC especializados**: Soportar multiples procesos de parseo (Discovery, HardwareInfo, Validation, Generate) con comportamiento condicionado por macros de sistema | Alta |
+| 5 | **Auto-documentacion**: Generar documentacion de capacidades a partir de la metadata del SDK | Media |
+| 6 | **Validacion de compatibilidad**: Verificar en compile-time que las APIs/drivers usados son compatibles con el MCU | Media |
+| 7 | **Gestion de recursos**: Rastrear asignacion de pines, canales, timers para detectar conflictos | Media |
 | 8 | **Toolchain-agnostic**: Separar la abstraccion de periferico del toolchain especifico | Media |
+
+> **Nota**: Este es un SDK nuevo desde cero. No se busca compatibilidad retroactiva
+> con el SDK existente.
 
 ---
 
@@ -269,9 +275,9 @@ _hard/
         └── RP2040/
 ```
 
-### Resolucion de ruta: `system.ucFamily` + `system.ucName`
+### Resolucion de ruta: triple macro `system.ucVendor` / `system.ucFamily` / `system.ucName`
 
-El PCB define dos macros en lugar de una:
+El PCB define tres macros obligatorias:
 
 ```
 EMIC:define(system.ucVendor, Microchip)
@@ -279,27 +285,252 @@ EMIC:define(system.ucFamily, PIC24F)
 EMIC:define(system.ucName, pic24FJ128GC006)
 ```
 
-El HAL usa la ruta completa:
+El HAL usa la ruta completa para resolver la implementacion hard:
 
 ```
 EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./UART/UART.emic, ...)
 ```
 
-**Compatibilidad**: Para SDKs existentes que solo definen `system.ucName`,
-el HAL puede mantener un fallback:
+Las tres macros son obligatorias en el nuevo SDK. No existen rutas alternativas
+ni fallbacks — la estructura de directorios es unica y consistente.
+
+---
+
+## 5. Procesos EMIC: Parseo Multi-Proposito
+
+### Concepto
+
+En el SDK actual, existen dos procesos de parseo principales:
+- **Discovery**: Parsea archivos `.emic` y `.h` para extraer recursos publicados
+  (funciones, variables, eventos) → alimenta el sidebar del Editor EMIC
+- **Generate**: Parsea los mismos archivos para producir codigo C compilable →
+  genera los archivos en `TARGET:`
+
+El nuevo SDK introduce la posibilidad de definir **procesos EMIC adicionales**,
+cada uno con objetivos diferentes. Todos los procesos usan el mismo motor de
+parseo (EMIC-Codify) pero actuan sobre distintos archivos y extraen
+informacion distinta.
+
+### Mecanismo: Macros de sistema como discriminador
+
+Cuando el sistema inicia un proceso de parseo, define automaticamente una
+**macro de sistema** que identifica el proceso activo. Esta macro se puede
+usar con `EMIC:ifdef` para que un mismo archivo `.emic` se comporte de
+forma diferente segun quien lo este parseando.
 
 ```
-EMIC:ifdef system.ucVendor
-    EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./UART/UART.emic, ...)
-EMIC:else
-    // Fallback legacy: ruta plana
-    EMIC:setInput(DEV:_hard/.{system.ucName}./UART/UART.emic, ...)
+// El sistema define automaticamente al iniciar cada proceso:
+// system.process.Discovery    → definida cuando corre Discovery
+// system.process.HardwareInfo → definida cuando corre HardwareInfo
+// system.process.Validation   → definida cuando corre Validation
+// system.process.Generate     → definida cuando corre Generate
+```
+
+### Procesos propuestos para HAL/Hard
+
+| Proceso | Parsea | Objetivo | Resultado |
+|---------|--------|----------|-----------|
+| **Discovery** | `_api/`, `_drivers/` | Publicar recursos al integrador | Sidebar del Editor (funciones, variables, eventos) |
+| **HardwareInfo** | `_hard/`, `_hal/` | Extraer metadata de MCU, perifericos y pines | Catalogo de hardware para AI y documentacion |
+| **Validation** | `_hal/` + proyecto | Verificar compatibilidad API↔MCU | Reporte de errores/warnings |
+| **Generate** | Todo | Producir codigo C compilable | Archivos `.c` y `.h` en `TARGET:` |
+| **PinInfo** | `_hard/*/pins/` | Extraer mapa de pines con capacidades | Descriptor de pines para PCB design |
+
+### Ejemplo: archivo dual con `EMIC:ifdef`
+
+Un archivo `_hard/ST/STM32F1/STM32F103C8/mcu.emic` puede comportarse
+de forma diferente segun el proceso que lo parsea:
+
+```
+// ================================================================
+// SECCION 1: Siempre se ejecuta (metadata comun)
+// ================================================================
+EMIC:json(type = mcu)
+{
+    "vendor": "ST",
+    "family": "STM32F1",
+    "model": "STM32F103C8",
+    "brief": "ARM Cortex-M3, 72MHz, 64KB Flash, 20KB SRAM",
+    "peripherals": {
+        "UART": { "available": true, "instances": 3 },
+        "SPI":  { "available": true, "instances": 2 },
+        "ADC":  { "available": true, "channels": 10 }
+    }
+}
+
+// ================================================================
+// SECCION 2: Solo se ejecuta durante HardwareInfo
+// Expone informacion detallada de registros y capacidades
+// ================================================================
+EMIC:ifdef system.process.HardwareInfo
+
+EMIC:json(type = mcu_detail)
+{
+    "memory_map": {
+        "flash_start": "0x08000000",
+        "ram_start": "0x20000000",
+        "peripheral_start": "0x40000000"
+    },
+    "clock_tree": {
+        "hse_range_mhz": [4, 16],
+        "pll_multipliers": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        "ahb_prescalers": [1, 2, 4, 8, 16, 64, 128, 256, 512],
+        "apb1_max_mhz": 36,
+        "apb2_max_mhz": 72
+    },
+    "dma_channels": [
+        {"channel": 1, "peripherals": ["ADC1", "TIM2_CH3", "TIM4_CH1"]},
+        {"channel": 2, "peripherals": ["SPI1_RX", "USART3_TX", "TIM1_CH1"]},
+        {"channel": 3, "peripherals": ["SPI1_TX", "USART3_RX", "TIM1_CH2"]}
+    ]
+}
+
 EMIC:endif
+
+// ================================================================
+// SECCION 3: Solo se ejecuta durante Validation
+// Define reglas de validacion especificas del MCU
+// ================================================================
+EMIC:ifdef system.process.Validation
+
+EMIC:json(type = validation_rules)
+{
+    "constraints": [
+        {
+            "rule": "max_uart_baud",
+            "value": 4500000,
+            "message": "STM32F103 UART max baud rate is 4.5 Mbps"
+        },
+        {
+            "rule": "adc_max_channels_simultaneous",
+            "value": 2,
+            "message": "STM32F103 has 2 ADC units for dual mode"
+        },
+        {
+            "rule": "apb1_clock_limit",
+            "value": 36,
+            "unit": "MHz",
+            "message": "APB1 peripherals (UART2/3, SPI2, I2C, TIM2-7) max 36 MHz"
+        }
+    ]
+}
+
+EMIC:endif
+
+// ================================================================
+// SECCION 4: Solo se ejecuta durante Generate
+// Configura macros y includes para compilacion
+// ================================================================
+EMIC:ifdef system.process.Generate
+
+EMIC:define(system.mcu_header, stm32f1xx.h)
+EMIC:define(system.fcy_formula, HCLK)
+EMIC:define(system.startup_file, startup_stm32f103c8tx.s)
+EMIC:define(system.linker_script, STM32F103C8Tx_FLASH.ld)
+EMIC:define(system.compiler, arm-none-eabi-gcc)
+EMIC:define(system.arch_flags, -mcpu=cortex-m3 -mthumb)
+
+EMIC:endif
+```
+
+### Ejemplo: contrato de periferico con secciones por proceso
+
+Un archivo `_hal/UART/UART.emic` tambien puede tener secciones condicionales:
+
+```
+// ================================================================
+// CONTRATO (siempre visible — base para todos los procesos)
+// ================================================================
+EMIC:json(type = peripheral)
+{
+    "name": "UART",
+    "brief": "Universal Asynchronous Receiver-Transmitter",
+    "category": "Communication",
+    "requires": {
+        "functions": [
+            {"name": "UART{port}_init", "signature": "void UART{port}_init(void)"},
+            {"name": "UART{port}_sendByte", "signature": "void UART{port}_sendByte(uint8_t data)"},
+            {"name": "UART{port}_readByte", "signature": "uint8_t UART{port}_readByte(void)"},
+            {"name": "UART{port}_dataAvailable", "signature": "uint8_t UART{port}_dataAvailable(void)"}
+        ]
+    }
+}
+
+// ================================================================
+// VALIDATION: verifica que el MCU soporta UART
+// ================================================================
+EMIC:ifdef system.process.Validation
+    // El validador lee el contrato JSON de arriba y lo cruza con
+    // el descriptor MCU para verificar compatibilidad
+    EMIC:json(type = validation_check)
+    {
+        "check": "peripheral_available",
+        "peripheral": "UART",
+        "severity": "error",
+        "message": "El MCU seleccionado no soporta UART"
+    }
+EMIC:endif
+
+// ================================================================
+// GENERATE: incluye la implementacion hard
+// ================================================================
+EMIC:ifdef system.process.Generate
+    EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./UART/UART.emic,port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
+EMIC:endif
+```
+
+### Ventajas del modelo multi-proceso
+
+| Aspecto | Sin procesos (actual) | Con procesos EMIC (propuesto) |
+|---------|----------------------|------------------------------|
+| **Un archivo, un proposito** | Cada archivo solo sirve para Generate o Discovery | Un archivo puede servir para multiples propositos |
+| **Informacion de hardware** | No accesible programaticamente | Proceso HardwareInfo extrae toda la metadata |
+| **Validacion** | Solo en compile-time (errores de C) | Pre-validacion EMIC antes de generar codigo |
+| **Documentacion** | Manual, externa al codigo | Auto-generada desde metadata de HardwareInfo |
+| **Condicionalidad** | Solo `EMIC:ifdef` sobre macros de config | `EMIC:ifdef system.process.X` controla que se expone |
+| **Extensibilidad** | Agregar info requiere crear archivos nuevos | Agregar secciones `EMIC:ifdef` en archivos existentes |
+
+### Flujo de ejecucion de cada proceso
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Proceso HardwareInfo                                               │
+│                                                                     │
+│  1. Sistema define: system.process.HardwareInfo                     │
+│  2. Parsea: _hard/{vendor}/{family}/{model}/mcu.emic                │
+│     → Extrae EMIC:json(type = mcu) + secciones ifdef HardwareInfo   │
+│  3. Parsea: _hard/{vendor}/{family}/{model}/pins/pin_map.emic       │
+│     → Extrae EMIC:json(type = pin_map)                              │
+│  4. Parsea: _hal/*/periferico.emic                                  │
+│     → Extrae EMIC:json(type = peripheral) como contratos            │
+│  5. Resultado: Catalogo completo de hardware en JSON                │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  Proceso Validation                                                 │
+│                                                                     │
+│  1. Sistema define: system.process.Validation + macros del proyecto │
+│  2. Parsea: _hal/*/periferico.emic                                  │
+│     → Lee contratos + secciones ifdef Validation                    │
+│  3. Cruza contratos con descriptor MCU del proyecto                 │
+│  4. Resultado: Reporte de compatibilidad (errores/warnings)         │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  Proceso PinInfo                                                    │
+│                                                                     │
+│  1. Sistema define: system.process.PinInfo                          │
+│  2. Parsea: _hard/{vendor}/{family}/{model}/pins/pin_map.emic       │
+│     → Extrae mapa completo de pines con capacidades                 │
+│  3. Parsea: _pcb/{pcbName}/pcb.emic                                 │
+│     → Extrae asignaciones de pines del PCB                          │
+│  4. Resultado: Mapa de pines disponibles/asignados                  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 5. Nuevo Sistema de Metadata: EMIC:json para HAL/Hard
+## 6. Nuevo Sistema de Metadata: EMIC:json para HAL/Hard
 
 ### Tipos de metadata propuestos
 
@@ -317,8 +548,9 @@ HAL/Hard:
 | `EMIC:json(type = mcu)` | `_hard/{vendor}/{family}/{model}/mcu.emic` | Describe el **MCU**: familia, nucleos, memoria, perifericos disponibles, toolchain |
 | `EMIC:json(type = pin_map)` | `_hard/{vendor}/{family}/{model}/pins/pin_map.emic` | Describe los **pines**: nombre fisico, capacidades, funciones alternativas |
 
-Estos bloques JSON son procesados por Discovery pero **no generan entradas en
-el sidebar del integrador**. En cambio, alimentan:
+Estos bloques JSON son procesados por los procesos EMIC especializados
+(HardwareInfo, Validation) — **no generan entradas en el sidebar del
+integrador**. En cambio, alimentan:
 - El DevAgent y otros agentes de IA (para seleccion de MCU, validacion, generacion de codigo)
 - El sistema de documentacion automatica
 - El validador de compatibilidad (API requiere ADC → MCU tiene ADC?)
@@ -326,7 +558,7 @@ el sidebar del integrador**. En cambio, alimentan:
 
 ---
 
-## 6. Contrato de Periferico: La Interfaz Estandar
+## 7. Contrato de Periferico: La Interfaz Estandar
 
 ### Concepto
 
@@ -523,7 +755,7 @@ EMIC:json(type = peripheral)
 
 ---
 
-## 7. Descriptor de MCU
+## 8. Descriptor de MCU
 
 ### Estructura: `EMIC:json(type = mcu)`
 
@@ -682,14 +914,14 @@ El descriptor MCU permite responder preguntas programaticamente:
 
 ---
 
-## 8. Descriptor de Pin Map
+## 9. Descriptor de Pin Map
 
 ### Estructura: `EMIC:json(type = pin_map)`
 
 El pin map describe todos los pines fisicos del MCU con sus capacidades.
 Reemplaza la coleccion de archivos `setPinXX.h` individuales con un
-descriptor estructurado que mantiene las macros C por compatibilidad pero
-agrega metadata:
+descriptor estructurado que sirve como fuente de verdad y permite
+generar las macros C automaticamente:
 
 ```javascript
 EMIC:json(type = pin_map)
@@ -789,7 +1021,7 @@ EMIC:json(type = pin_map)
 ### Generacion de macros C desde pin_map
 
 El sistema genera automaticamente los archivos `setPinXX.h` a partir del
-pin map, manteniendo compatibilidad con el formato actual:
+pin map, usando el formato estandar de macros:
 
 ```
 // Generado automaticamente desde pin_map.emic
@@ -814,9 +1046,9 @@ el `pin_map.emic` con el JSON y el sistema genera todos los `.h`.
 
 ---
 
-## 9. Ejemplos Completos
+## 10. Ejemplos Completos
 
-### 9.1. UART HAL con contrato
+### 10.1. UART HAL con contrato
 
 **`_hal/UART/UART.emic`** (rediseñado):
 ```
@@ -916,17 +1148,14 @@ EMIC:json(type = peripheral)
 }
 
 // ================================================================
-// ROUTING A IMPLEMENTACION HARD
+// ROUTING A IMPLEMENTACION HARD (solo durante Generate)
 // ================================================================
-EMIC:ifdef system.ucVendor
+EMIC:ifdef system.process.Generate
     EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./UART/UART.emic,port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
-EMIC:else
-    // Fallback legacy
-    EMIC:setInput(DEV:_hard/.{system.ucName}./UART/UARTX.emic,port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
 EMIC:endif
 ```
 
-### 9.2. ADC HAL con contrato
+### 10.2. ADC HAL con contrato
 
 **`_hal/ADC/adc.emic`** (rediseñado):
 ```
@@ -989,16 +1218,14 @@ EMIC:json(type = peripheral)
 EMIC:ifndef _HAL_ADC_EMIC_
 EMIC:define(_HAL_ADC_EMIC_,true)
 
-EMIC:ifdef system.ucVendor
+EMIC:ifdef system.process.Generate
     EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./ADC/adc.emic)
-EMIC:else
-    EMIC:setInput(DEV:_hard/.{system.ucName}./ADC/adc.emic)
 EMIC:endif
 
 EMIC:endif
 ```
 
-### 9.3. MCU descriptor para STM32F103
+### 10.3. MCU descriptor para STM32F103
 
 **`_hard/ST/STM32F1/STM32F103C8/mcu.emic`** (ejemplo ARM):
 ```
@@ -1114,7 +1341,7 @@ EMIC:json(type = mcu)
 }
 ```
 
-### 9.4. Implementacion hard UART para STM32F103
+### 10.4. Implementacion hard UART para STM32F103
 
 **`_hard/ST/STM32F1/STM32F103C8/UART/UART.emic`**:
 ```
@@ -1207,83 +1434,26 @@ ambos MCUs.
 
 ---
 
-## 10. Estrategia de Compatibilidad
+## 11. Impacto en Capas Superiores
 
-### 10.1. Proyectos existentes (SDK actual)
+### 11.1. APIs y Drivers
 
-Los proyectos existentes usan SDKs donde `_hard/` tiene la estructura plana:
+Las APIs y drivers invocan HAL con la misma interfaz:
 ```
-_hard/pic24FJ64GA002/...
-```
-
-Y los PCBs definen solo `system.ucName`:
-```
-EMIC:define(system.ucName, pic24FJ64GA002)
+EMIC:setInput(DEV:_hal/UART/UART.emic, port=1, baud=9600, ...)
 ```
 
-**Estrategia**: No modificar el SDK actual. Crear un SDK nuevo con la
-estructura propuesta. Los proyectos existentes siguen usando el SDK antiguo
-sin cambios.
+No necesitan saber la ruta interna (`_hard/Microchip/PIC24F/pic24FJ64GA002/`).
+El HAL resuelve la ruta usando las macros `system.ucVendor/ucFamily/ucName`.
 
-### 10.2. Migracion gradual
+### 11.2. PCBs
 
-Para los MCUs Microchip existentes que se quieran migrar al nuevo SDK:
-
-1. Crear la estructura `_hard/Microchip/PIC24F/pic24FJ64GA002/`
-2. Copiar los archivos de periferico existentes
-3. Agregar `mcu.emic` con el descriptor JSON
-4. Agregar `pins/pin_map.emic` con el descriptor de pines
-5. Actualizar los HAL `.emic` con el contrato JSON + fallback dual
-
-El fallback en HAL garantiza que ambas rutas funcionan:
-```
-EMIC:ifdef system.ucVendor
-    // Ruta nueva: vendor/family/model
-    EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./...)
-EMIC:else
-    // Ruta legacy: model directamente
-    EMIC:setInput(DEV:_hard/.{system.ucName}./...)
-EMIC:endif
-```
-
-### 10.3. PCBs nuevos
-
-Los PCBs nuevos agregan las macros adicionales:
+Los PCBs definen tres macros obligatorias:
 ```
 EMIC:define(system.ucVendor, Microchip)
 EMIC:define(system.ucFamily, PIC24F)
 EMIC:define(system.ucName, pic24FJ128GC006)
 ```
-
-Los PCBs existentes siguen funcionando sin cambios gracias al fallback.
-
-### 10.4. Tabla de compatibilidad
-
-| Escenario | SDK viejo | SDK nuevo (legacy path) | SDK nuevo (full path) |
-|-----------|:---------:|:----------------------:|:--------------------:|
-| PCB viejo (solo ucName) | Funciona | Funciona (fallback) | No aplica |
-| PCB nuevo (vendor+family+name) | No aplica | Funciona | Funciona |
-| API existente sin cambios | Funciona | Funciona | Funciona |
-| API nueva con validacion | No aplica | Funciona | Funciona + validacion |
-
----
-
-## 11. Impacto en Capas Superiores
-
-### 11.1. APIs y Drivers (sin cambios obligatorios)
-
-Las APIs y drivers siguen invocando HAL exactamente igual:
-```
-EMIC:setInput(DEV:_hal/UART/UART.emic, port=1, baud=9600, ...)
-```
-
-No necesitan saber si la ruta interna es `_hard/pic24FJ64GA002/` o
-`_hard/Microchip/PIC24F/pic24FJ64GA002/`. El HAL resuelve la ruta.
-
-### 11.2. PCBs (cambio menor)
-
-Los PCBs nuevos agregan dos macros adicionales (`system.ucVendor`,
-`system.ucFamily`). Los PCBs existentes no cambian.
 
 ### 11.3. DevAgent (beneficios nuevos)
 
@@ -1301,17 +1471,19 @@ El DevAgent puede ahora:
 - **Asistir en diseño de PCB**: Sugerir asignacion de pines basada en
   capacidades disponibles
 
-### 11.4. Discovery (extensiones)
+### 11.4. Procesos EMIC (integracion)
 
-Discovery procesa los nuevos tipos de `EMIC:json`:
+Los nuevos tipos de `EMIC:json` son procesados por distintos procesos:
 
-| Tipo JSON | Procesado por Discovery | Visible en sidebar | Uso principal |
-|-----------|:-----------------------:|:------------------:|--------------|
-| `type = peripheral` | Si | No | Validacion de contratos |
-| `type = mcu` | Si | No | Catalogo de MCUs para AI |
-| `type = pin_map` | Si | No | Gestion de recursos de pines |
-| `type = Configurator` | Si | Si | Configuracion visual (existente) |
-| `type = middleware` | Si | Si | Middleware Discovery (nuevo) |
+| Tipo JSON | HardwareInfo | Discovery | Validation | Generate | Visible en sidebar |
+|-----------|:---:|:---:|:---:|:---:|:--:|
+| `type = peripheral` | Si | — | Si | — | No |
+| `type = mcu` | Si | — | Si | — | No |
+| `type = mcu_detail` | Si | — | — | — | No |
+| `type = pin_map` | Si | — | Si | — | No |
+| `type = validation_rules` | — | — | Si | — | No |
+| `type = Configurator` | — | Si | — | Si | Si |
+| `type = middleware` | — | Si | — | Si | Si |
 
 ### 11.5. Documentacion automatica
 
@@ -1337,41 +1509,49 @@ A partir de los descriptores JSON, el sistema puede generar automaticamente:
 
 ## 12. Plan de Implementacion
 
-### Fase 1 — Metadata sin cambios de codigo (bajo riesgo)
+> **Contexto**: Este plan asume un SDK nuevo desde cero. No hay migracion
+> ni compatibilidad con el SDK existente.
 
-1. Crear `EMIC:json(type = mcu)` para cada MCU existente en el SDK actual
-2. Crear `EMIC:json(type = pin_map)` para cada MCU existente
-3. Crear `EMIC:json(type = peripheral)` para cada periferico en `_hal/`
-4. Validar que Discovery parsea los nuevos JSON sin afectar el flujo actual
-5. El DevAgent puede empezar a consumir la metadata inmediatamente
+### Fase 1 — Infraestructura base
 
-**Resultado**: Informacion estructurada disponible sin tocar ningun archivo
-de codigo generado.
+1. Crear la estructura de directorios del nuevo SDK
+2. Implementar soporte para `EMIC:json` de los nuevos tipos (`peripheral`,
+   `mcu`, `mcu_detail`, `pin_map`, `validation_rules`)
+3. Implementar el mecanismo de macros de sistema `system.process.*` en el
+   motor de parseo
+4. Definir contratos `EMIC:json(type = peripheral)` para los perifericos
+   core: GPIO, UART, SPI, I2C, ADC, Timer, PWM, System
 
-### Fase 2 — Reestructuracion de directorios (medio riesgo)
+**Resultado**: Estructura del SDK lista, contratos definidos, motor de
+procesos funcional.
 
-1. Crear estructura `_hard/Microchip/PIC24F/` y `_hard/Microchip/dsPIC33/`
-2. Mover archivos existentes a la nueva estructura
-3. Agregar fallback dual en los HAL `.emic`
-4. Verificar que proyectos existentes compilan sin cambios
+### Fase 2 — Primer MCU completo (referencia)
 
-**Resultado**: Estructura preparada para multi-familia sin romper nada.
+1. Elegir un MCU de referencia (ej: PIC24FJ128GC006 o STM32F103C8)
+2. Crear `_hard/{vendor}/{family}/{model}/` con `mcu.emic` y `pin_map.emic`
+3. Implementar todos los perifericos del MCU cumpliendo los contratos HAL
+4. Implementar el proceso HardwareInfo para extraer metadata
+5. Verificar que Generate produce codigo compilable
 
-### Fase 3 — Primer MCU de otra familia (medio riesgo)
+**Resultado**: Un MCU completamente funcional con metadata estructurada.
 
-1. Elegir un MCU ARM sencillo (ej: STM32F103C8 "Blue Pill")
-2. Implementar `_hard/ST/STM32F1/STM32F103C8/` con todos los perifericos
-3. Crear toolchain integration para arm-none-eabi-gcc
-4. Verificar que las APIs existentes compilan contra el nuevo MCU
-5. Documentar diferencias y ajustes necesarios
+### Fase 3 — Segundo MCU de familia diferente
 
-**Resultado**: Prueba de concepto de multi-familia funcionando.
+1. Elegir un MCU de otra familia/vendor (ej: STM32F103C8 si Fase 2 fue PIC,
+   o viceversa)
+2. Implementar `_hard/{vendor}/{family}/{model}/` con mismos contratos
+3. Verificar que las APIs funcionan sin cambios sobre ambos MCUs
+4. Validar que HardwareInfo produce catalogo correcto para ambos
 
-### Fase 4 — Validacion y gestion de recursos (bajo riesgo)
+**Resultado**: Prueba de concepto multi-familia funcionando con contratos
+verificados.
 
-1. Implementar validador de contratos en el compilador/DevAgent
-2. Implementar gestor de recursos de pines (conflicto detection)
-3. Implementar generacion automatica de documentacion
-4. Integrar con DevAgent para sugerencias de MCU
+### Fase 4 — Procesos de validacion y documentacion
 
-**Resultado**: Sistema completo con validacion y auto-documentacion.
+1. Implementar proceso Validation con cruce contrato↔MCU
+2. Implementar proceso PinInfo con gestion de recursos de pines
+3. Implementar generacion automatica de documentacion desde metadata
+4. Integrar con DevAgent para seleccion de MCU, validacion y sugerencias
+
+**Resultado**: Sistema completo con validacion pre-compilacion,
+auto-documentacion y asistencia AI.
