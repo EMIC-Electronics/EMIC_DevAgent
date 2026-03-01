@@ -83,7 +83,14 @@ Antes de cualquier llamada al LLM, el sistema presenta un **menu interactivo har
      para los recursos internos del micro y expone funciones para ser
      consumidas por la capa API.
 
-  6. Otro (especificar)
+  6. Middleware EMIC
+     Bloque de procesamiento intermedio entre drivers y APIs: filtros
+     digitales, detectores de umbral, colas/buffers, conversores de
+     unidades, controladores PID. NO accede a HAL ni hard. Es
+     parametrizable, multi-instancia y seleccionable por el integrador
+     via Discovery desde el editor EMIC.
+
+  7. Otro (especificar)
 ```
 
 ### Nivel 2 — Sub-tipo (segun seleccion de Nivel 1)
@@ -237,6 +244,17 @@ Antes de cualquier llamada al LLM, el sistema presenta un **menu interactivo har
 | 6 | Motor / Actuador | Driver de potencia (L298, DRV8825, ULN2003, etc.) |
 | 7 | Otro (especificar) | |
 
+**Opcion 6 → Middleware EMIC:**
+
+| # | Opcion | Descripcion |
+|---|--------|-------------|
+| 1 | Filtro | Filtro digital: promedio movil, IIR, FIR, mediana, Kalman. Suaviza señales ruidosas de sensores. |
+| 2 | Detector | Detector de condiciones: cruce de umbral con histeresis, cruce por cero, deteccion de picos, ventana de rango. |
+| 3 | Cola / Buffer | Almacenamiento temporal entre capas: FIFO, buffer circular, cola de prioridad. Desacopla tasas de datos diferentes. |
+| 4 | Conversor | Conversion y calibracion: escala lineal (factor/offset), tabla de lookup, conversion de unidades, linealizacion. |
+| 5 | Control | Algoritmo de control: PID, histeresis, rate limiter, rampa de aceleracion. Procesa señal sin acceso a hardware. |
+| 6 | Otro (especificar) | |
+
 ### Mapeo Menu → Enums
 
 | Nivel 1 | → IntentType | → ProjectType |
@@ -246,6 +264,7 @@ Antes de cualquier llamada al LLM, el sistema presenta un **menu interactivo har
 | Modulo EMIC | CreateModule | EmicModule |
 | API EMIC | CreateApi | (no aplica) |
 | Driver EMIC | CreateDriver | (no aplica) |
+| Middleware EMIC | CreateMiddleware (*) | (no aplica) |
 
 | Nivel 2 (Modulo EMIC) | → ModuleRole |
 |----------------------|-------------|
@@ -294,9 +313,19 @@ Antes de cualquier llamada al LLM, el sistema presenta un **menu interactivo har
 | Transceptor | Transceiver |
 | Motor / Actuador | MotorActuator |
 
+| Nivel 2 (Middleware EMIC) | → MiddlewareType (*) |
+|---------------------------|---------------------|
+| Filtro | Filter |
+| Detector | Detector |
+| Cola / Buffer | Queue |
+| Conversor | Converter |
+| Control | Control |
+
+(*) Valores nuevos que requieren agregar `CreateMiddleware` en `IntentType` y el enum `MiddlewareType` en `AgentContext.cs`.
+
 ### Implementacion
 
-El menu se ejecuta en `OrchestratorAgent.RunInitialMenuAsync()` **antes** de `ClassifyIntentAsync()`. Los resultados se almacenan en `context.Properties` con claves `MenuIntent`, `MenuProjectType`, `MenuModuleRole`, `MenuSystemKind`, `MenuDeviceFunction`, `MenuApiType`, `MenuDriverTarget`. Luego se pasan como historial de conversacion al LLM para que no re-pregunte lo ya resuelto.
+El menu se ejecuta en `OrchestratorAgent.RunInitialMenuAsync()` **antes** de `ClassifyIntentAsync()`. Los resultados se almacenan en `context.Properties` con claves `MenuIntent`, `MenuProjectType`, `MenuModuleRole`, `MenuSystemKind`, `MenuDeviceFunction`, `MenuApiType`, `MenuDriverTarget`, `MenuMiddlewareType`. Luego se pasan como historial de conversacion al LLM para que no re-pregunte lo ya resuelto.
 
 ---
 
