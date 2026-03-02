@@ -173,13 +173,13 @@ Este mandato tiene implicaciones profundas en el diseño:
 
 | Capa | Puede acceder a | NO puede acceder a | Estandar C | Contiene |
 |------|-----------------|-------------------|-----------|----------|
-| `_api/` | `_hal/`, `_middleware/`, `_drivers/` | `_hard/` | C99 Freestanding | Logica de alto nivel, recursos publicados |
-| `_drivers/` | `_hal/` | `_hard/`, `_api/` | C99 Freestanding | Control de dispositivos externos |
-| `_middleware/` | `_api/`, `_drivers/` (via funciones) | `_hard/`, `_hal/` | C99 Freestanding | Procesamiento de señales, filtros |
+| `_api/` | `_hal/`, `_middleware/`, `_drivers/`, `_system/` | `_hard/` | C99 Freestanding | Logica de alto nivel, recursos publicados |
+| `_drivers/` | `_hal/`, `_system/` | `_hard/`, `_api/` | C99 Freestanding | Control de dispositivos externos |
+| `_middleware/` | `_api/`, `_drivers/` (via funciones), `_system/` | `_hard/`, `_hal/` | C99 Freestanding | Procesamiento de señales, filtros |
 | `_hal/` | `_hard/` (via routing) | `_api/`, `_drivers/` | N/A (metadata + routing) | Contratos, routing a hard |
-| `_hard/` | Headers del vendor | `_api/`, `_drivers/`, `_hal/` | C + toolchain nativo | SFRs, ISRs, registros |
+| `_hard/` | Headers del vendor + C99 standard headers | `_api/`, `_drivers/`, `_hal/`, `_system/` | C + toolchain nativo | SFRs, ISRs, registros |
 | `_pcb/` | `_hard/` (define macros) | Todo lo demas | N/A (macros EMIC) | Asignacion de pines, MCU selection |
-| `_system/` | — | Todo | C99 Freestanding | Utilidades core, conversiones |
+| `_system/` | — | Todo | C99 Freestanding | Utilidades core (streams, conversiones) |
 
 **Reglas de dependencia estrictas**:
 
@@ -196,16 +196,22 @@ Este mandato tiene implicaciones profundas en el diseño:
         _hard/   ← implementaciones MCU-especificas
            │
        _pcb/     ← configura macros system.uc*
+
+     _system/    ← utilidades core (accesible por _api/, _drivers/, _middleware/)
 ```
 
 1. Las flechas indican **dependencia permitida** (quien incluye a quien)
-2. `_hard/` NUNCA importa de `_api/` ni `_drivers/`
+2. `_hard/` NUNCA importa de `_api/`, `_drivers/` ni `_system/`
 3. `_hal/` NUNCA contiene codigo C — solo metadata JSON y routing EMIC
 4. `_middleware/` recibe funciones como parametros, no importa archivos
    de `_api/` o `_drivers/` directamente
 5. Solo `_hard/` puede usar `#include` de headers vendor (ej: `stm32f1xx.h`)
 6. Las capas portables (`_api/`, `_drivers/`, `_middleware/`, `_system/`)
    deben compilar con cualquier compilador C99 sin modificaciones
+7. `_system/` es una capa utilitaria sin dependencias, consumida por
+   las capas portables superiores (`_api/`, `_drivers/`, `_middleware/`).
+   `_hard/` NO accede a `_system/` — solo usa headers vendor y C99
+   standard headers (`<stdint.h>`, `<stdbool.h>`, `<stddef.h>`)
 
 ---
 
@@ -1835,11 +1841,11 @@ el SDK:
     "processes": ["Discovery", "HardwareInfo", "Validation", "Generate", "PinInfo"],
 
     "layers": {
-        "_api":        {"standard": "C99 Freestanding", "can_access": ["_hal", "_middleware", "_drivers"]},
-        "_drivers":    {"standard": "C99 Freestanding", "can_access": ["_hal"]},
-        "_middleware":  {"standard": "C99 Freestanding", "can_access": ["(functions as params)"]},
+        "_api":        {"standard": "C99 Freestanding", "can_access": ["_hal", "_middleware", "_drivers", "_system"]},
+        "_drivers":    {"standard": "C99 Freestanding", "can_access": ["_hal", "_system"]},
+        "_middleware":  {"standard": "C99 Freestanding", "can_access": ["(functions as params)", "_system"]},
         "_hal":        {"standard": "N/A (metadata)", "can_access": ["_hard"]},
-        "_hard":       {"standard": "C + toolchain nativo", "can_access": ["vendor headers"]},
+        "_hard":       {"standard": "C + toolchain nativo", "can_access": ["vendor headers", "C99 standard headers"]},
         "_pcb":        {"standard": "N/A (macros EMIC)", "can_access": ["_hard"]},
         "_system":     {"standard": "C99 Freestanding", "can_access": []}
     }

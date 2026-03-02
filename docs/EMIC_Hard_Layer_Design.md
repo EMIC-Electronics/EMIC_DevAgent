@@ -20,7 +20,7 @@ rapida — la version completa y normativa esta en el documento padre.
 | **M1** (C99 Freestanding + toolchain nativo) | `_hard/` es la UNICA capa que usa el toolchain nativo. Las funciones expuestas tienen signatures C99 puras. Dentro de la implementacion se permite cualquier extension vendor. |
 | **M2** (Escalabilidad) | Agregar un MCU = crear carpeta + archivos. Ningun archivo existente se modifica. |
 | **M3** (AI-first) | Cada MCU tiene `mcu.emic` auto-descriptivo con `EMIC:json`. Las rutas son predecibles por convencion. |
-| **M4** (Separacion por capas) | `_hard/` NUNCA importa de `_api/`, `_drivers/` ni `_middleware/`. Solo accede a headers del vendor y a `_system/`. |
+| **M4** (Separacion por capas) | `_hard/` NUNCA importa de `_api/`, `_drivers/`, `_middleware/` ni `_system/`. Solo accede a headers del vendor y headers C99 standard (`<stdint.h>`, `<stdbool.h>`, `<stddef.h>`). |
 
 ---
 
@@ -35,7 +35,7 @@ rapida — la version completa y normativa esta en el documento padre.
 6. [Descriptor de Pines (`pin_map.emic`)](#6-descriptor-de-pines-pin_mapemic)
 7. [Patrones de Implementacion de Perifericos](#7-patrones-de-implementacion-de-perifericos)
 8. [Patron ISR por Familia](#8-patron-isr-por-familia)
-9. [Patron de Buffer Circular (FIFO)](#9-patron-de-buffer-circular-fifo)
+9. [Modelo Callback + Control de Concurrencia](#9-modelo-callback--control-de-concurrencia)
 10. [Registros de Compilacion (Macros EMIC)](#10-registros-de-compilacion-macros-emic)
 11. [Descriptor de Familia](#11-descriptor-de-familia)
 12. [Procesos EMIC en `_hard/`](#12-procesos-emic-en-_hard)
@@ -88,12 +88,19 @@ a registros del vendor y cualquier extension propietaria del toolchain.
 - **NO registra inits ni polls propios**: Los inits/polls se registran
   en la capa `_api/` que los llama en cadena (ver MEMORY: "Regla de
   encadenamiento de inits/polls")
-- **NO importa de `_api/`, `_drivers/` ni `_middleware/`**: Solo accede
-  a headers vendor y a `_system/` (utilidades core)
+- **NO implementa buffers ni colas**: Los datos recibidos por ISR se
+  entregan via callback a la capa superior. La politica de almacenamiento
+  (FIFO, ring buffer, parser inline, etc.) es responsabilidad de la API
+  o del middleware — no del hardware.
+- **NO importa de `_api/`, `_drivers/`, `_middleware/` ni `_system/`**:
+  Solo accede a headers del vendor y headers C99 standard (`<stdint.h>`,
+  `<stdbool.h>`, `<stddef.h>`). Las utilidades core de `_system/`
+  (streams, conversiones) son consumidas por las capas superiores, no
+  por `_hard/`
 - **NO publica recursos al integrador**: Discovery no indexa `_hard/`;
   los recursos se publican en `_api/` via EMIC-Codify
 - **NO contiene logica de alto nivel**: Solo inicializacion de hardware,
-  transferencia de datos y manejo de interrupciones
+  transferencia de datos via callback y manejo de interrupciones
 
 ### Frontera de portabilidad
 
@@ -109,6 +116,11 @@ las function signatures definidas en `_hal/{PERIFERICO}/{periferico}.emic`.
                                │        while (!(U1STA & 0x0200));
     // Solo ve la signature    │        U1TXREG = data;
     // No sabe como funciona   │    }
+                               │
+    // La ISR llama al         │    void _U1RXInterrupt(void) {
+    // callback de la API:     │        IFS0bits.U1RXIF = 0;
+    void myRxCb(uint8_t d);   │        myRxCb(U1RXREG);  // callback
+                               │    }
                                │
                                │    // Usa SFRs del vendor
                                │    // Puede usar __attribute__,
@@ -127,11 +139,10 @@ _hard/
 │   ├── PIC24F/                              ← Familia
 │   │   ├── PIC24F.family.emic               ← Descriptor de familia
 │   │   ├── _shared/                         ← Codigo compartido entre modelos
-│   │   │   ├── FIFO/                        ← Buffer circular reutilizable
-│   │   │   │   ├── inc/fifo.h
-│   │   │   │   └── src/fifo.c
-│   │   │   └── PPS/                         ← Pin remapping compartido
-│   │   │       └── inc/pps.h
+│   │   │   ├── PPS/                         ← Pin remapping compartido
+│   │   │   │   └── inc/pps.h
+│   │   │   └── CriticalSection/             ← Macros de interrupt enable/disable
+│   │   │       └── inc/critical.h
 │   │   ├── pic24FJ64GA002/                  ← Modelo especifico
 │   │   │   ├── mcu.emic                     ← Descriptor del MCU
 │   │   │   ├── pins/
@@ -276,7 +287,7 @@ Solo 5 MCUs, todos Microchip PIC. No hay jerarquia vendor/family.
 void __attribute__((interrupt(auto_psv))) _U1RXInterrupt(void) {
     IFS0bits.U1RXIF = 0;  // Clear interrupt flag
     uint8_t data = U1RXREG;
-    // ... almacenar en FIFO
+    // ... entregar via callback
 }
 ```
 
@@ -353,7 +364,8 @@ Cada familia tiene un descriptor a nivel de directorio de familia:
 _hard/{vendor}/{family}/
 ├── {Family}.family.emic         ← Descriptor de familia
 └── _shared/                     ← Codigo compartido entre modelos
-    ├── FIFO/                    ← Buffer circular
+    ├── PPS/                     ← Pin remapping (PIC24)
+    ├── CriticalSection/         ← Macros de interrupt enable/disable
     └── ...                      ← Otros componentes compartidos
 ```
 
@@ -373,7 +385,7 @@ _hard/ST/STM32F1/STM32F103C8/
 │   ├── inc/gpio.h
 │   └── src/gpio.c
 ├── UART/
-│   ├── UART.emic                ← Parametrizado: port, baud, BufferSize
+│   ├── UART.emic                ← Parametrizado: port, baud, rxCallback, txCallback
 │   ├── inc/UART.h
 │   └── src/UART.c
 ├── SPI/
@@ -670,13 +682,18 @@ Usado por perifericos con multiples instancias: **UART, SPI, I2C, Timer**.
 El placeholder `.{port}.` (o `.{timer_number}.`, `.{channel}.`) se
 sustituye durante `EMIC:copy` para generar codigo unico por instancia.
 
+Los perifericos de comunicacion reciben **callbacks** como parametros
+en lugar de tamaños de buffer. La capa `_hard/` no implementa buffers
+ni colas — solo entrega/solicita datos via callbacks provistos por la
+capa superior.
+
 **Orquestador `UART.emic`:**
 
 ```
 // @layer: hard
 // @peripheral: UART
 // @pattern: parameterized
-// @parameters: port, baud, BufferSize, driver
+// @parameters: port, baud, rxCallback, txCallback, driver
 
 EMIC:ifndef _HARD_UART.{port}._EMIC
 EMIC:define(_HARD_UART.{port}._EMIC, true)
@@ -686,10 +703,10 @@ EMIC:setInput(DEV:_hal/GPIO/gpio.emic)
 
 // Generar archivos para esta instancia
 EMIC:copy(inc/UART.h > TARGET:inc/UART.{port}..h,
-          port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
+          port=.{port}.,baud=.{baud}.,rxCallback=.{rxCallback}.,txCallback=.{txCallback}.,driver=.{driver}.)
 
 EMIC:copy(src/UART.c > TARGET:UART.{port}..c,
-          port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
+          port=.{port}.,baud=.{baud}.,rxCallback=.{rxCallback}.,txCallback=.{txCallback}.,driver=.{driver}.)
 
 // Registrar para compilacion
 EMIC:define(c_modules.UART.{port}., UART.{port}.)
@@ -697,30 +714,15 @@ EMIC:define(c_modules.UART.{port}., UART.{port}.)
 EMIC:endif
 ```
 
-**Variante con `setOutput/restoreOutput`** (PIC24 actual):
-
-```
-EMIC:ifndef _HARD_UART.{port}._EMIC
-EMIC:define(_HARD_UART.{port}._EMIC, true)
-
-EMIC:setInput(DEV:_hal/GPIO/gpio.emic)
-
-// setOutput redirige la salida a un archivo especifico
-EMIC:setOutput(TARGET:inc/UART.{port}..h)
-EMIC:copy(inc/UART.h, port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
-EMIC:restoreOutput
-
-EMIC:setOutput(TARGET:UART.{port}..c)
-EMIC:copy(src/UART.c, port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
-EMIC:restoreOutput
-
-EMIC:define(c_modules.UART.{port}., UART.{port}.)
-
-EMIC:endif
-```
-
-**Recomendacion para el nuevo SDK**: Usar `EMIC:copy(src > dest)` como
-patron unico. Es mas claro, mas conciso y equivalente funcionalmente.
+**Parametros de callback:**
+- `rxCallback`: Funcion de la capa superior llamada por la ISR RX cuando
+  llega un byte. Signature: `void rxCallback(uint8_t data)`. Se ejecuta
+  en contexto ISR — debe ser rapida (ej: push a FIFO, set flag).
+- `txCallback`: Funcion de la capa superior llamada por la ISR TX cuando
+  el hardware esta listo para enviar otro byte. Signature:
+  `bool txCallback(uint8_t *data)`. Retorna `true` si hay dato para
+  enviar (escrito en `*data`), `false` si no hay mas datos (la ISR TX
+  se auto-desactiva).
 
 ### 7.2. Patron B — Periferico No Parametrizado (instancia unica)
 
@@ -768,10 +770,10 @@ EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}
 EMIC:endif
 ```
 
-### 7.4. Patron D — Periferico con Recursos Compartidos
+### 7.4. Patron D — Periferico con Recursos Compartidos de Familia
 
-Perifericos que comparten codigo a nivel de familia. Ejemplo: el buffer
-FIFO es identico para todos los PIC24F.
+Perifericos que comparten codigo a nivel de familia. Ejemplo: la secuencia
+PPS (Peripheral Pin Select) es identica para todos los PIC24F.
 
 **Orquestador que referencia `_shared/`:**
 
@@ -785,24 +787,27 @@ EMIC:define(_HARD_UART.{port}._EMIC, true)
 
 EMIC:setInput(DEV:_hal/GPIO/gpio.emic)
 
-// Componente compartido de familia (FIFO)
-EMIC:ifndef _SHARED_FIFO
-EMIC:define(_SHARED_FIFO, true)
-EMIC:copy(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./_shared/FIFO/inc/fifo.h > TARGET:inc/fifo.h)
-EMIC:copy(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./_shared/FIFO/src/fifo.c > TARGET:fifo.c)
-EMIC:define(c_modules.fifo, fifo)
+// Componente compartido de familia (PPS unlock/lock)
+EMIC:ifndef _SHARED_PPS
+EMIC:define(_SHARED_PPS, true)
+EMIC:copy(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./_shared/PPS/inc/pps.h > TARGET:inc/pps.h)
 EMIC:endif
 
 // Archivos especificos del modelo
 EMIC:copy(inc/UART.h > TARGET:inc/UART.{port}..h,
-          port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
+          port=.{port}.,baud=.{baud}.,rxCallback=.{rxCallback}.,txCallback=.{txCallback}.,driver=.{driver}.)
 EMIC:copy(src/UART.c > TARGET:UART.{port}..c,
-          port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
+          port=.{port}.,baud=.{baud}.,rxCallback=.{rxCallback}.,txCallback=.{txCallback}.,driver=.{driver}.)
 
 EMIC:define(c_modules.UART.{port}., UART.{port}.)
 
 EMIC:endif
 ```
+
+El patron `_shared/` sigue siendo util para codigo compartido entre modelos
+de una misma familia (PPS, secuencias de unlock, macros de concurrencia,
+etc.) — pero ya **no incluye buffers FIFO**, que son responsabilidad de
+la capa superior.
 
 ---
 
@@ -812,15 +817,20 @@ Cada familia de MCU tiene su propio mecanismo de interrupciones. La
 capa `_hard/` encapsula estas diferencias. Las ISRs son transparentes
 para las capas superiores.
 
-### Microchip PIC24 / dsPIC
+En el modelo callback, la ISR de recepcion (RX) llama directamente a
+`.{rxCallback}.` con el dato recibido. La ISR de transmision (TX)
+llama a `.{txCallback}.` para obtener el siguiente dato a enviar; si
+no hay mas datos, se auto-desactiva.
+
+### 8.1. ISR RX por Familia
+
+#### Microchip PIC24 / dsPIC
 
 ```c
-// Vector de interrupcion nombrado con prefijo _
-// auto_psv: preserva el PSV register automaticamente
 void __attribute__((interrupt(auto_psv))) _U.{port}.RXInterrupt(void) {
     IFS0bits.U.{port}.RXIF = 0;     // Clear flag obligatorio primero
     uint8_t data = U.{port}.RXREG;  // Leer dato del registro de recepcion
-    fifo_push(&rxFifo_.{port}., data);
+    .{rxCallback}.(data);            // Entregar a capa superior
 }
 ```
 
@@ -830,72 +840,157 @@ void __attribute__((interrupt(auto_psv))) _U.{port}.RXInterrupt(void) {
 - `auto_psv` es obligatorio para evitar corrupcion de `const` en PSVPAG
 - Priority bits disponibles en `IPC{n}bits.U{port}RXIP`
 
-### Microchip PIC32
+#### Microchip PIC32
 
 ```c
-// ISR via atributos especificos de PIC32
-void __attribute__((vector(_UART1_RX_VECTOR), interrupt(IPL3SOFT),
-                    nomips16)) UART1_RXHandler(void) {
-    IFS1CLR = _IFS1_U1RXIF_MASK;    // Clear flag via CLR register
-    uint8_t data = U1RXREG;
-    fifo_push(&rxFifo_1, data);
+void __attribute__((vector(_UART.{port}._RX_VECTOR), interrupt(IPL3SOFT),
+                    nomips16)) UART.{port}._RXHandler(void) {
+    IFS1CLR = _IFS1_U.{port}.RXIF_MASK;
+    uint8_t data = U.{port}.RXREG;
+    .{rxCallback}.(data);
 }
 ```
 
-### ST STM32 (ARM Cortex-M)
+#### ST STM32 (ARM Cortex-M)
 
 ```c
-// ISR nombrada segun tabla de vectores del startup file
-// No usa __attribute__ — el nombre es el vector
 void USART.{port}._IRQHandler(void) {
     if (USART.{port}.->SR & USART_SR_RXNE) {
-        uint8_t data = USART.{port}.->DR;
-        fifo_push(&rxFifo_.{port}., data);
+        uint8_t data = (uint8_t)USART.{port}.->DR;
+        .{rxCallback}.(data);
     }
+    // (TX se maneja en la misma ISR, ver seccion 8.2)
 }
 ```
 
 **Notas**:
 - Los nombres son fijos: `USART1_IRQHandler`, `SPI1_IRQHandler`, etc.
 - Se habilitan via NVIC: `NVIC_EnableIRQ(USART1_IRQn)`
-- No requiere clear explicito del flag; leer DR limpia RXNE automaticamente
+- Leer DR limpia RXNE automaticamente
 
-### Atmel AVR
+#### Atmel AVR
 
 ```c
-// ISR macro de avr-libc
 ISR(USART_RX_vect) {
     uint8_t data = UDR0;
-    fifo_push(&rxFifo, data);
+    .{rxCallback}.(data);
 }
 ```
 
 **Notas**:
 - Usa macro `ISR()` de `<avr/interrupt.h>`
 - Nombres de vectores definidos en el header del MCU
-- `cli()`/`sei()` para disable/enable global interrupts
 
-### Espressif ESP32 (Xtensa / RISC-V)
+#### Espressif ESP32 (Xtensa / RISC-V)
 
 ```c
-// ISR registrada dinamicamente via ESP-IDF
 static void IRAM_ATTR uart_isr_handler(void *arg) {
     uint32_t status = UART.{port}..int_st.val;
     if (status & UART_RXFIFO_FULL_INT_ST) {
         while (UART.{port}..status.rxfifo_cnt) {
             uint8_t data = UART.{port}..fifo.rw_byte;
-            fifo_push(&rxFifo_.{port}., data);
+            .{rxCallback}.(data);
         }
         UART.{port}..int_clr.rxfifo_full_int_clr = 1;
     }
 }
-
-// En init:
-esp_intr_alloc(ETS_UART.{port}._INTR_SOURCE, ESP_INTR_FLAG_IRAM,
-               uart_isr_handler, NULL, NULL);
 ```
 
-### Tabla resumen
+### 8.2. ISR TX por Familia
+
+La ISR TX se invoca cuando el hardware esta listo para enviar un byte.
+Llama a `.{txCallback}.` para obtener el dato. Si el callback retorna
+`false` (no hay mas datos), la ISR desactiva su propia interrupcion.
+
+#### Microchip PIC24 / dsPIC
+
+```c
+void __attribute__((interrupt(auto_psv))) _U.{port}.TXInterrupt(void) {
+    IFS0bits.U.{port}.TXIF = 0;
+    uint8_t data;
+    if (.{txCallback}.(&data)) {
+        U.{port}.TXREG = data;
+    } else {
+        IEC0bits.U.{port}.TXIE = 0;   // No hay mas datos → desactivar TX ISR
+    }
+}
+```
+
+#### Microchip PIC32
+
+```c
+void __attribute__((vector(_UART.{port}._TX_VECTOR), interrupt(IPL3SOFT),
+                    nomips16)) UART.{port}._TXHandler(void) {
+    IFS1CLR = _IFS1_U.{port}.TXIF_MASK;
+    uint8_t data;
+    if (.{txCallback}.(&data)) {
+        U.{port}.TXREG = data;
+    } else {
+        IEC1CLR = _IEC1_U.{port}.TXIE_MASK;
+    }
+}
+```
+
+#### ST STM32 (ARM Cortex-M)
+
+```c
+// Dentro de USART.{port}._IRQHandler (compartida con RX):
+    if (USART.{port}.->SR & USART_SR_TXE) {
+        uint8_t data;
+        if (.{txCallback}.(&data)) {
+            USART.{port}.->DR = data;
+        } else {
+            USART.{port}.->CR1 &= ~USART_CR1_TXEIE;  // Desactivar TX ISR
+        }
+    }
+```
+
+#### Atmel AVR
+
+```c
+ISR(USART_UDRE_vect) {
+    uint8_t data;
+    if (.{txCallback}.(&data)) {
+        UDR0 = data;
+    } else {
+        UCSR0B &= ~(1 << UDRIE0);   // Desactivar UDRE interrupt
+    }
+}
+```
+
+#### Espressif ESP32
+
+```c
+// Dentro de uart_isr_handler (compartida con RX):
+    if (status & UART_TXFIFO_EMPTY_INT_ST) {
+        uint8_t data;
+        if (.{txCallback}.(&data)) {
+            UART.{port}..fifo.rw_byte = data;
+        } else {
+            UART.{port}..int_ena.txfifo_empty_int_ena = 0;
+        }
+        UART.{port}..int_clr.txfifo_empty_int_clr = 1;
+    }
+```
+
+### 8.3. Inicio de transmision
+
+Para iniciar una transmision, la capa superior llama a una funcion
+que habilita la interrupcion TX. El primer byte se puede enviar
+directamente o dejando que la ISR TX haga el trabajo:
+
+```c
+// En UART.{port}..c
+void UART.{port}._startTx(void) {
+    uint8_t data;
+    if (.{txCallback}.(&data)) {
+        U.{port}.TXREG = data;         // Enviar primer byte
+        IEC0bits.U.{port}.TXIE = 1;    // Habilitar ISR TX para el resto
+    }
+}
+```
+
+### 8.4. Tabla resumen
 
 | Familia | Declaracion ISR | Clear flag | Enable | Global disable |
 |---------|----------------|------------|--------|---------------|
@@ -907,116 +1002,165 @@ esp_intr_alloc(ETS_UART.{port}._INTR_SOURCE, ESP_INTR_FLAG_IRAM,
 
 ---
 
-## 9. Patron de Buffer Circular (FIFO)
+## 9. Modelo Callback + Control de Concurrencia
 
-### Proposito
+### 9.1. Principio de diseno
 
-Todo periferico de comunicacion (UART, SPI, I2C) necesita un buffer
-circular para almacenar datos recibidos por ISR. El patron FIFO es
-identico para todas las familias de MCU — lo que cambia es el
-mecanismo de proteccion de concurrencia.
+La capa `_hard/` **no implementa buffers ni colas**. Su responsabilidad
+se limita a:
 
-### Implementacion canonica
+1. **RX**: Cuando la ISR recibe un byte, lo entrega inmediatamente via
+   `.{rxCallback}.(data)` a la capa superior.
+2. **TX**: Cuando el hardware esta listo para enviar, solicita el
+   siguiente byte via `.{txCallback}.(&data)` a la capa superior.
+3. **Control de concurrencia**: Expone funciones para que la capa
+   superior pueda desactivar/activar la interrupcion de un periferico
+   especifico (no globales), permitiendole acceder a datos compartidos
+   de manera segura.
 
-```c
-// inc/fifo.h
-#ifndef FIFO_H
-#define FIFO_H
+La politica de almacenamiento (FIFO, ring buffer, parser inline,
+despacho por evento, etc.) es decision de la **API** o del
+**middleware** — no del hardware.
 
-#include <stdint.h>
-#include <stdbool.h>
+### 9.2. Signatures de callbacks
 
-typedef struct {
-    uint8_t *buffer;
-    uint16_t size;
-    volatile uint16_t head;   // Escrito por ISR
-    volatile uint16_t tail;   // Leido por main loop
-    volatile uint16_t count;  // Elementos disponibles
-} fifo_t;
-
-void fifo_init(fifo_t *f, uint8_t *buf, uint16_t size);
-bool fifo_push(fifo_t *f, uint8_t data);
-bool fifo_pop(fifo_t *f, uint8_t *data);
-bool fifo_isEmpty(fifo_t *f);
-uint16_t fifo_count(fifo_t *f);
-
-#endif
-```
+Los callbacks son parametros del orquestador `.emic` que se sustituyen
+como nombres de funcion durante `EMIC:copy`:
 
 ```c
-// src/fifo.c
-#include "inc/fifo.h"
+// rxCallback — llamado desde ISR RX cuando llega un byte
+// Signature: void rxCallback(uint8_t data)
+// Contexto: ISR — debe ser rapida (push a FIFO, set flag, etc.)
+// El nombre real viene del parametro .{rxCallback}. del EMIC:copy
+void .{rxCallback}.(uint8_t data);
 
-void fifo_init(fifo_t *f, uint8_t *buf, uint16_t size) {
-    f->buffer = buf;
-    f->size = size;
-    f->head = 0;
-    f->tail = 0;
-    f->count = 0;
-}
-
-bool fifo_push(fifo_t *f, uint8_t data) {
-    if (f->count >= f->size) return false;  // Buffer lleno
-    f->buffer[f->head] = data;
-    f->head = (f->head + 1) % f->size;
-    f->count++;
-    return true;
-}
-
-bool fifo_pop(fifo_t *f, uint8_t *data) {
-    if (f->count == 0) return false;  // Buffer vacio
-    *data = f->buffer[f->tail];
-    f->tail = (f->tail + 1) % f->size;
-    f->count--;
-    return true;
-}
-
-bool fifo_isEmpty(fifo_t *f) {
-    return (f->count == 0);
-}
-
-uint16_t fifo_count(fifo_t *f) {
-    return f->count;
-}
+// txCallback — llamado desde ISR TX cuando el hardware esta listo
+// Signature: bool txCallback(uint8_t *data)
+// Retorna true + escribe *data → se envia el byte
+// Retorna false → no hay mas datos, la ISR TX se auto-desactiva
+bool .{txCallback}.(uint8_t *data);
 ```
 
-### Proteccion de concurrencia por familia
+### 9.3. Control de concurrencia (interrupt enable/disable)
 
-La unica parte que varia entre familias es como deshabilitar las
-interrupciones durante accesos criticos desde el main loop:
+La capa `_hard/` expone funciones (o `#define`) que permiten a la capa
+superior desactivar y reactivar la interrupcion de un periferico
+**especifico**, sin afectar las interrupciones globales ni de otros
+perifericos. Esto es fundamental para que la capa superior pueda
+acceder de forma segura a datos compartidos con la ISR (por ejemplo,
+un FIFO que el rxCallback llena y el poll consume).
+
+**Funciones expuestas por `_hard/`:**
 
 ```c
-// PIC24/dsPIC
-#define CRITICAL_ENTER()  __builtin_disi(0x3FFF)
-#define CRITICAL_EXIT()   __builtin_disi(0x0000)
+// Habilitar/deshabilitar interrupcion RX de un periferico especifico
+void UART.{port}._rxIntEnable(bool enable);
 
-// PIC32
-#define CRITICAL_ENTER()  unsigned int _st = __builtin_disable_interrupts()
-#define CRITICAL_EXIT()   __builtin_mtc0(12, 0, _st)
-
-// STM32 (Cortex-M)
-#define CRITICAL_ENTER()  __disable_irq()
-#define CRITICAL_EXIT()   __enable_irq()
-
-// AVR
-#define CRITICAL_ENTER()  cli()
-#define CRITICAL_EXIT()   sei()
-
-// ESP32
-#define CRITICAL_ENTER()  portENTER_CRITICAL(&mux)
-#define CRITICAL_EXIT()   portEXIT_CRITICAL(&mux)
+// Habilitar/deshabilitar interrupcion TX de un periferico especifico
+void UART.{port}._txIntEnable(bool enable);
 ```
 
-### Ubicacion en el SDK
+**Implementacion por familia:**
 
-- **Candidato a `_shared/`**: Si todos los modelos de una familia usan
-  el mismo FIFO, se coloca en `_hard/{vendor}/{family}/_shared/FIFO/`
-- **Candidato a `_system/`**: Si la implementacion es 100% C99 y no
-  necesita macros de concurrencia vendor-especificas, puede vivir en
-  `_system/` como utilidad compartida por todo el SDK
-- **Hibrido (recomendado)**: `fifo.c`/`fifo.h` en `_system/` con las
-  funciones puras, y macros `CRITICAL_ENTER/EXIT` definidas en
-  `_hard/{vendor}/{family}/_shared/critical.h`
+```c
+// ── PIC24/dsPIC ──
+void UART.{port}._rxIntEnable(bool enable) {
+    IEC0bits.U.{port}.RXIE = enable ? 1 : 0;
+}
+void UART.{port}._txIntEnable(bool enable) {
+    IEC0bits.U.{port}.TXIE = enable ? 1 : 0;
+}
+
+// ── PIC32 ──
+void UART.{port}._rxIntEnable(bool enable) {
+    if (enable) IEC1SET = _IEC1_U.{port}.RXIE_MASK;
+    else        IEC1CLR = _IEC1_U.{port}.RXIE_MASK;
+}
+void UART.{port}._txIntEnable(bool enable) {
+    if (enable) IEC1SET = _IEC1_U.{port}.TXIE_MASK;
+    else        IEC1CLR = _IEC1_U.{port}.TXIE_MASK;
+}
+
+// ── STM32 (Cortex-M) ──
+void UART.{port}._rxIntEnable(bool enable) {
+    if (enable) USART.{port}.->CR1 |=  USART_CR1_RXNEIE;
+    else        USART.{port}.->CR1 &= ~USART_CR1_RXNEIE;
+}
+void UART.{port}._txIntEnable(bool enable) {
+    if (enable) USART.{port}.->CR1 |=  USART_CR1_TXEIE;
+    else        USART.{port}.->CR1 &= ~USART_CR1_TXEIE;
+}
+
+// ── AVR ──
+void UART.{port}._rxIntEnable(bool enable) {
+    if (enable) UCSR0B |=  (1 << RXCIE0);
+    else        UCSR0B &= ~(1 << RXCIE0);
+}
+void UART.{port}._txIntEnable(bool enable) {
+    if (enable) UCSR0B |=  (1 << UDRIE0);
+    else        UCSR0B &= ~(1 << UDRIE0);
+}
+
+// ── ESP32 ──
+void UART.{port}._rxIntEnable(bool enable) {
+    UART.{port}..int_ena.rxfifo_full_int_ena = enable ? 1 : 0;
+}
+void UART.{port}._txIntEnable(bool enable) {
+    UART.{port}..int_ena.txfifo_empty_int_ena = enable ? 1 : 0;
+}
+```
+
+### 9.4. Uso desde la capa superior
+
+Ejemplo tipico: la API implementa un FIFO y usa las funciones de
+control de concurrencia para acceso seguro:
+
+```c
+// En la capa _api/ o _middleware/:
+
+// rxCallback — llamado desde ISR RX
+void myRxCallback(uint8_t data) {
+    fifo_push(&rxFifo, data);   // FIFO implementado en esta capa
+}
+
+// txCallback — llamado desde ISR TX
+bool myTxCallback(uint8_t *data) {
+    return fifo_pop(&txFifo, data);
+}
+
+// Poll — lee datos del FIFO con proteccion de concurrencia
+void UART1_API_poll(void) {
+    uint8_t data;
+
+    UART1_rxIntEnable(false);   // Desactivar ISR RX del UART1
+    bool hasData = fifo_pop(&rxFifo, &data);
+    UART1_rxIntEnable(true);    // Reactivar ISR RX del UART1
+
+    if (hasData) {
+        // Procesar data...
+    }
+}
+
+// Iniciar transmision
+void UART1_API_send(uint8_t *buf, uint16_t len) {
+    // Cargar datos en txFifo
+    for (uint16_t i = 0; i < len; i++) {
+        fifo_push(&txFifo, buf[i]);
+    }
+    UART1_startTx();  // Funcion de _hard/ que envia primer byte + habilita TX ISR
+}
+```
+
+### 9.5. Ventajas del modelo
+
+| Ventaja | Explicacion |
+|---------|-------------|
+| **Flexibilidad** | La capa superior elige su propia politica de almacenamiento (FIFO, ring buffer, parser inline, despacho directo) |
+| **Zero-copy posible** | El rxCallback puede escribir directo en un buffer de protocolo sin copia intermedia |
+| **RAM controlada** | El tamaño del buffer lo decide quien conoce los requisitos de la aplicacion, no el driver |
+| **Composable** | Se puede interponer middleware entre el callback y el almacenamiento final |
+| **Testable** | El FIFO se puede testear independientemente del hardware |
+| **Multi-periferico seguro** | Deshabilitar UART1_RX no afecta a UART2_RX ni a SPI1 |
 
 ---
 
@@ -1068,7 +1212,7 @@ orden de compilacion:
 
 ```
 EMIC:define(includes_head.system, inc/system.h)   // Al principio de todos los includes
-EMIC:define(includes_src.fifo, fifo)               // En el grupo de sources del sistema
+EMIC:define(includes_src.system, system)             // En el grupo de sources del sistema
 ```
 
 ### Reglas criticas (de MEMORY)
@@ -1117,14 +1261,14 @@ EMIC:json(type = family)
 
     "shared_code": [
         {
-            "component": "FIFO",
-            "path": "_shared/FIFO/",
-            "brief": "Circular buffer for UART/SPI/I2C reception"
-        },
-        {
             "component": "PPS",
             "path": "_shared/PPS/",
             "brief": "Peripheral Pin Select unlock/lock sequence"
+        },
+        {
+            "component": "CriticalSection",
+            "path": "_shared/CriticalSection/",
+            "brief": "Per-peripheral interrupt enable/disable macros"
         }
     ],
 
@@ -1262,12 +1406,14 @@ EMIC:json(type = peripheral_implementation)
         "UART{port}_init",
         "UART{port}_bd",
         "UART{port}_sendByte",
-        "UART{port}_readByte",
-        "UART{port}_dataAvailable",
-        "UART{port}_sendString"
+        "UART{port}_startTx",
+        "UART{port}_rxIntEnable",
+        "UART{port}_txIntEnable"
     ],
-    "implemented_optional": ["sendString"],
-    "buffer_type": "FIFO",
+    "callback_model": {
+        "rxCallback": "void(uint8_t data)",
+        "txCallback": "bool(uint8_t *data)"
+    },
     "uses_dma": false
 }
 
@@ -1353,7 +1499,7 @@ Esta simplificacion elimina la necesidad de mantener decenas de archivos
 
 [ ] 3. CREAR carpeta _shared/ de familia (si no existe)
     _hard/{Vendor}/{Family}/_shared/
-    → FIFO, critical sections, utilities comunes
+    → PPS, critical section macros, utilities comunes
 
 [ ] 4. CREAR descriptor de MCU
     _hard/{Vendor}/{Family}/{Model}/mcu.emic
@@ -1377,9 +1523,11 @@ Esta simplificacion elimina la necesidad de mantener decenas de archivos
 [ ] 7. IMPLEMENTAR perifericos
     Por cada periferico que el MCU soporta:
     _hard/{Vendor}/{Family}/{Model}/{PERIFERICO}/
-    ├── {periferico}.emic   → Orquestador (copy + define)
-    ├── inc/{periferico}.h  → Prototipos con signatures C99
-    └── src/{periferico}.c  → Implementacion con SFRs/ISRs
+    ├── {periferico}.emic   → Orquestador (copy + define, con callbacks para comm)
+    ├── inc/{periferico}.h  → Prototipos C99 + rxIntEnable/txIntEnable
+    └── src/{periferico}.c  → ISRs con callbacks + control de concurrencia
+    NOTA: Perifericos de comunicacion NO implementan buffers.
+    Usan rxCallback/txCallback para entregar/solicitar datos.
 
 [ ] 8. VERIFICAR contratos
     Para cada periferico implementado:
@@ -1541,7 +1689,9 @@ C99 puras:
 // CORRECTO — C99 puro
 void UART1_init(void);
 void UART1_sendByte(uint8_t data);
-uint8_t UART1_readByte(void);
+void UART1_startTx(void);
+void UART1_rxIntEnable(bool enable);
+void UART1_txIntEnable(bool enable);
 uint16_t adc_readChannel(uint8_t channel);
 void Timer1_setPeriod(uint32_t period_us);
 
@@ -1579,9 +1729,8 @@ GPIO_setOutput      → GPIO es siempre singleton en naming
 
 ```c
 // Variables internas de _hard — NO visibles fuera
-static uint8_t rxBuffer_1[64];        // Prefijo descriptivo + instancia
-static volatile uint16_t rxHead_1;    // volatile para variables ISR
-static fifo_t rxFifo_1;              // Struct del FIFO
+// Nota: _hard/ NO declara buffers para comunicacion (responsabilidad de capa superior)
+static volatile bool txBusy_.{port}.;   // Flag de transmision en curso
 
 // Variables exportadas (en header)
 extern int16_t Buffer_entradas[];     // Buffer ADC (parte del contrato)
@@ -1599,8 +1748,11 @@ extern int16_t Buffer_entradas[];     // Buffer ADC (parte del contrato)
 
 void UART.{port}._init(void);
 void UART.{port}._sendByte(uint8_t data);
-uint8_t UART.{port}._readByte(void);
-uint8_t UART.{port}._dataAvailable(void);
+void UART.{port}._startTx(void);
+
+// Control de concurrencia — per-peripheral interrupt enable/disable
+void UART.{port}._rxIntEnable(bool enable);
+void UART.{port}._txIntEnable(bool enable);
 
 #endif
 ```
@@ -1611,8 +1763,8 @@ uint8_t UART.{port}._dataAvailable(void);
 // @layer: hard
 // @peripheral: UART
 // @instance: .{port}.
-// @implements: UART{port}_init, UART{port}_sendByte, UART{port}_readByte,
-//              UART{port}_dataAvailable
+// @implements: UART{port}_init, UART{port}_sendByte, UART{port}_startTx,
+//              UART{port}_rxIntEnable, UART{port}_txIntEnable
 // @contract: _hal/UART/UART.emic
 // @mcu: .{system.ucName}.
 ```
@@ -1688,7 +1840,7 @@ La capa HAL consume `_hard/` exclusivamente via routing:
 // _hal/UART/UART.emic
 EMIC:ifdef system.process.Generate
     EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./UART/UART.emic,
-                  port=.{port}.,baud=.{baud}.,BufferSize=.{BufferSize}.,driver=.{driver}.)
+                  port=.{port}.,baud=.{baud}.,rxCallback=.{rxCallback}.,txCallback=.{txCallback}.,driver=.{driver}.)
 EMIC:endif
 ```
 
@@ -1725,8 +1877,11 @@ las funciones expuestas por el contrato HAL:
 // Esto funciona identico en PIC24, STM32, AVR, ESP32:
 UART1_init();
 UART1_bd(9600);
-UART1_sendByte('H');
-uint8_t data = UART1_readByte();
+UART1_sendByte('H');              // Envia un byte de forma bloqueante
+UART1_startTx();                  // Inicia transmision via ISR TX + txCallback
+UART1_rxIntEnable(false);         // Desactiva ISR RX para acceso seguro a datos
+// ... acceder a datos compartidos ...
+UART1_rxIntEnable(true);          // Reactiva ISR RX
 ```
 
 ### 18.4. Regla de init/poll (de MEMORY)
@@ -1821,4 +1976,5 @@ Estos nombres son constantes del SDK. No se usan sinonimos.
 | **Pin remap** | PPS (unlock/lock) | PPS | AFIO_REMAP | Ninguno | GPIO Matrix |
 | **Global int off** | `__builtin_disi()` | `__builtin_disable_int()` | `__disable_irq()` | `cli()` | `portDISABLE_INT()` |
 | **Bits** | 16 | 32 | 32 | 8 | 32 |
-| **FIFO location** | `_shared/` | `_shared/` | `_shared/` | inline | inline o RTOS |
+| **Callback delivery** | ISR → `.{rxCallback}.` | ISR → `.{rxCallback}.` | IRQHandler → `.{rxCallback}.` | ISR → `.{rxCallback}.` | IRAM_ATTR → `.{rxCallback}.` |
+| **Concurrency ctrl** | `IECxbits` per-bit | `IECxSET/CLR` | `CR1 RXNEIE/TXEIE` | `UCSR0B` bits | `int_ena` fields |
