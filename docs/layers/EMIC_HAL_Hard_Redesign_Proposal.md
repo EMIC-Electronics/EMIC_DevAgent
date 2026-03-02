@@ -695,7 +695,7 @@ EMIC:endif
 // GENERATE: incluye la implementacion hard
 // ================================================================
 EMIC:ifdef system.process.Generate
-    EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./UART/UART.emic,port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
+    EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./UART/UART.emic,port=.{port}.,baud=.{baud}.,rxCallback=.{rxCallback}.,txCallback=.{txCallback}.,driver=.{driver}.)
 EMIC:endif
 ```
 
@@ -828,11 +828,16 @@ EMIC:json(type = peripheral)
             "brief": "Velocidad en baudios"
         },
         {
-            "name": "BufferSize",
-            "type": "uint16_t",
-            "required": false,
-            "default": "64",
-            "brief": "Tamaño del buffer de recepcion en bytes"
+            "name": "rxCallback",
+            "type": "function_name",
+            "required": true,
+            "brief": "Funcion llamada por ISR RX: void rxCallback(uint8_t data)"
+        },
+        {
+            "name": "txCallback",
+            "type": "function_name",
+            "required": true,
+            "brief": "Funcion llamada por ISR TX: bool txCallback(uint8_t *data)"
         },
         {
             "name": "driver",
@@ -966,7 +971,7 @@ EMIC:json(type = peripheral)
 | Periferico | Funciones obligatorias | Funciones opcionales | Parametros clave |
 |------------|----------------------|---------------------|-----------------|
 | **GPIO** | `setOutput()`, `setInput()`, `read()`, `write()`, `toggle()` | `setPullUp()`, `setPullDown()`, `setOpenDrain()`, `attachInterrupt()` | `pin` |
-| **UART** | `init()`, `bd()`, `sendByte()`, `readByte()`, `dataAvailable()` | `sendString()`, `flush()`, `setCallback()` | `port`, `baud`, `BufferSize`, `driver` |
+| **UART** | `init()`, `bd()`, `sendByte()`, `startTx()`, `rxIntEnable()`, `txIntEnable()` | `sendString()`, `flush()` | `port`, `baud`, `rxCallback`, `txCallback`, `driver` |
 | **SPI** | `init()`, `transfer()`, `writeByte()`, `readByte()` | `transferDMA()`, `setSpeed()`, `setMode()` | `port`, `configuracion`, `mode` |
 | **I2C** | `init()`, `start()`, `stop()`, `writeByte()`, `readByte()`, `ack()`, `nack()` | `writeBlock()`, `readBlock()`, `setSpeed()`, `scanBus()` | `port`, `speed`, `client` |
 | **ADC** | `init()`, `addChannel()`, `read()`, `poll()` | `startContinuous()`, `stopContinuous()`, `setResolution()`, `calibrate()` | `resolution`, `referenceVoltage` |
@@ -1303,11 +1308,16 @@ EMIC:json(type = peripheral)
             "brief": "Velocidad en baudios"
         },
         {
-            "name": "BufferSize",
-            "type": "uint16_t",
-            "required": false,
-            "default": "64",
-            "brief": "Tamaño del buffer de recepcion"
+            "name": "rxCallback",
+            "type": "function_name",
+            "required": true,
+            "brief": "Funcion llamada por ISR RX: void rxCallback(uint8_t data)"
+        },
+        {
+            "name": "txCallback",
+            "type": "function_name",
+            "required": true,
+            "brief": "Funcion llamada por ISR TX: bool txCallback(uint8_t *data)"
         },
         {
             "name": "driver",
@@ -1376,7 +1386,7 @@ EMIC:json(type = peripheral)
 // ROUTING A IMPLEMENTACION HARD (solo durante Generate)
 // ================================================================
 EMIC:ifdef system.process.Generate
-    EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./UART/UART.emic,port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
+    EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./UART/UART.emic,port=.{port}.,baud=.{baud}.,rxCallback=.{rxCallback}.,txCallback=.{txCallback}.,driver=.{driver}.)
 EMIC:endif
 ```
 
@@ -1579,10 +1589,10 @@ EMIC:define(_STM32_UART.{port}._EMIC,true)
 EMIC:setInput(DEV:_hal/GPIO/gpio.emic)
 
 EMIC:copy(inc/UART.h > TARGET:inc/UART.{port}..h,
-          port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
+          port=.{port}.,baud=.{baud}.,rxCallback=.{rxCallback}.,txCallback=.{txCallback}.,driver=.{driver}.)
 
 EMIC:copy(src/UART.c > TARGET:UART.{port}..c,
-          port=.{port}.,BufferSize=.{BufferSize}.,baud=.{baud}.,driver=.{driver}.)
+          port=.{port}.,baud=.{baud}.,rxCallback=.{rxCallback}.,txCallback=.{txCallback}.,driver=.{driver}.)
 
 EMIC:define(c_modules.UART.{port}.,UART.{port}.)
 
@@ -1613,10 +1623,6 @@ EMIC:endif
     #define UARTx_RX_PIN    GPIO_PIN_3
 #endif
 
-static uint8_t rxBuffer_.{port}.[.{BufferSize}.];
-static volatile uint16_t rxHead_.{port}. = 0;
-static volatile uint16_t rxTail_.{port}. = 0;
-
 void UART.{port}._init(void) {
     UARTx_CLK_EN();
     // Configurar GPIO para TX (AF Push-Pull) y RX (Input Floating)
@@ -1635,30 +1641,47 @@ void UART.{port}._sendByte(uint8_t data) {
     UARTx->DR = data;
 }
 
-uint8_t UART.{port}._readByte(void) {
-    if (rxHead_.{port}. == rxTail_.{port}.) return 0;
-    uint8_t data = rxBuffer_.{port}.[rxTail_.{port}.];
-    rxTail_.{port}. = (rxTail_.{port}. + 1) % .{BufferSize}.;
-    return data;
+void UART.{port}._startTx(void) {
+    uint8_t data;
+    if (.{txCallback}.(&data)) {
+        UARTx->DR = data;
+        UARTx->CR1 |= USART_CR1_TXEIE;  // Habilitar ISR TX
+    }
 }
 
-uint8_t UART.{port}._dataAvailable(void) {
-    return (rxHead_.{port}. != rxTail_.{port}.) ? 1 : 0;
+void UART.{port}._rxIntEnable(bool enable) {
+    if (enable) UARTx->CR1 |=  USART_CR1_RXNEIE;
+    else        UARTx->CR1 &= ~USART_CR1_RXNEIE;
+}
+
+void UART.{port}._txIntEnable(bool enable) {
+    if (enable) UARTx->CR1 |=  USART_CR1_TXEIE;
+    else        UARTx->CR1 &= ~USART_CR1_TXEIE;
 }
 
 void UARTx_IRQHandler(void) {
     if (UARTx->SR & USART_SR_RXNE) {
-        rxBuffer_.{port}.[rxHead_.{port}.] = UARTx->DR;
-        rxHead_.{port}. = (rxHead_.{port}. + 1) % .{BufferSize}.;
+        uint8_t data = (uint8_t)UARTx->DR;
+        .{rxCallback}.(data);              // Entregar a capa superior via callback
+    }
+    if (UARTx->SR & USART_SR_TXE) {
+        uint8_t data;
+        if (.{txCallback}.(&data)) {
+            UARTx->DR = data;
+        } else {
+            UARTx->CR1 &= ~USART_CR1_TXEIE;  // No hay mas datos → desactivar TX ISR
+        }
     }
 }
 ```
 
-**Punto clave**: La implementacion STM32 expone exactamente las mismas
-funciones que la implementacion PIC24 (`UART{port}_init`, `UART{port}_bd`,
-`UART{port}_sendByte`, `UART{port}_readByte`, `UART{port}_dataAvailable`).
-Las APIs y drivers que consumen UART via HAL funcionan sin cambios en
-ambos MCUs.
+**Punto clave**: La implementacion STM32 expone las mismas funciones que
+cualquier otra familia (`UART{port}_init`, `UART{port}_bd`,
+`UART{port}_sendByte`, `UART{port}_startTx`, `UART{port}_rxIntEnable`,
+`UART{port}_txIntEnable`). La capa `_hard/` no implementa buffers — entrega
+datos via `.{rxCallback}.` y solicita datos via `.{txCallback}.`. La politica
+de almacenamiento (FIFO, ring buffer, etc.) es responsabilidad de la capa
+superior.
 
 ---
 

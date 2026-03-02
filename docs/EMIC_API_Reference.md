@@ -200,19 +200,26 @@ Modulo (generate.emic):
                 driver=MCP2200, port=1, BufferSize=512, baud=9600)
       ↓
 API (USB_API.emic):
+  // La API crea sus callbacks internos y propaga al driver
   EMIC:setInput(DEV:_drivers/USB/.{driver}./.{driver}..emic,
-                port=.{port}., BufferSize=.{BufferSize}., baud=.{baud}.)
+                port=.{port}., baud=.{baud}.,
+                rxCallback=.{rxCallback}., txCallback=.{txCallback}.)
       ↓
 Driver (MCP2200.emic):
   EMIC:setInput(DEV:_hal/UART/UART.emic,
-                port=.{port}., BufferSize=.{BufferSize}., baud=.{baud}.)
+                port=.{port}., baud=.{baud}.,
+                rxCallback=.{rxCallback}., txCallback=.{txCallback}.)
       ↓
 HAL (UART.emic):
-  EMIC:setInput(DEV:_hard/.{system.ucName}./UART/UARTX.emic,
-                port=.{port}., BufferSize=.{BufferSize}., baud=.{baud}.)
+  EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./UART/UART.emic,
+                port=.{port}., baud=.{baud}.,
+                rxCallback=.{rxCallback}., txCallback=.{txCallback}., driver=.{driver}.)
 ```
 
 Cada capa recibe los parametros, usa los que necesita y propaga el resto.
+Nota: `BufferSize` se consume en la API (que implementa el FIFO), no se
+propaga hasta `_hard/`. En cambio, `rxCallback` y `txCallback` se propagan
+hasta `_hard/` donde las ISRs los invocan.
 
 ### 4.2. Eventos Opt-in (Zero-Cost Abstraction)
 
