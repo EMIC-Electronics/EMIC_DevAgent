@@ -7,8 +7,211 @@
 
 ---
 
+## Mandatos Fundamentales
+
+Estos cuatro mandatos son los principios rectores del nuevo SDK. Todo diseño,
+decision de implementacion e iteracion futura debe evaluarse contra su
+cumplimiento. Son inmutables.
+
+### M1. Universalidad: C99 Freestanding + cualquier toolchain en Hard
+
+> **Las capas portables del SDK generan codigo C99 Freestanding, compilable
+> por CUALQUIER compilador C99. La capa `_hard/` usa el toolchain nativo
+> del MCU target sin restricciones. La frontera de portabilidad es el
+> contrato HAL (las function signatures).**
+
+- **C99 Freestanding**: El estandar C define dos entornos — *hosted*
+  (PC con OS) y *freestanding* (embebido, sin OS). C99 Freestanding
+  es el minimo comun denominador que TODOS los compiladores embebidos
+  soportan. Garantiza disponibilidad de:
+  - `<stdint.h>` — `uint8_t`, `uint16_t`, `int32_t`, `size_t`
+  - `<stdbool.h>` — `bool`, `true`, `false`
+  - `<stddef.h>` — `NULL`, `offsetof`
+  - `<stdarg.h>` — funciones variadic
+  - `<limits.h>`, `<float.h>` — limites de tipos
+- **Alcance de toolchains en `_hard/`**: Cualquier compilador C que
+  soporte el MCU target. Sin restricciones:
+
+  | Toolchain | Base | Targets |
+  |-----------|------|---------|
+  | `arm-none-eabi-gcc` | GCC | ARM Cortex-M/A/R |
+  | `avr-gcc` | GCC | ATmega, ATtiny |
+  | `riscv-none-elf-gcc` | GCC | RISC-V |
+  | `xtensa-esp32-elf-gcc` | GCC | ESP32 |
+  | `XC16` | GCC fork | PIC24, dsPIC |
+  | `XC32` | GCC fork | PIC32 |
+  | `XC8` | Propietario | PIC 8-bit (10/12/16/18) |
+  | `IAR` | Propietario | ARM, AVR, MSP430, RX, RL78 |
+  | `Keil/ARMCC` | Propietario | ARM Cortex |
+  | `TI CCS` | Propietario | MSP430, C2000 |
+  | `SDCC` | Open source | 8051, STM8, Z80 |
+
+- **Frontera de portabilidad — el contrato HAL**:
+
+  ```
+  ┌────────────────────────────────────────────────────────────┐
+  │  Capas portables: _api/, _drivers/, _middleware/, _system/ │
+  │                                                            │
+  │  Estandar: C99 Freestanding                                │
+  │  Headers:  <stdint.h>, <stdbool.h>, <stddef.h>            │
+  │  Prohibido: headers vendor, asm, pragmas, __attribute__    │
+  │                                                            │
+  │  → Compila con CUALQUIER compilador C99                    │
+  └────────────────────────┬───────────────────────────────────┘
+                           │ Contrato HAL = function signatures
+                           │ C99 puras (la frontera de portabilidad)
+  ┌────────────────────────▼───────────────────────────────────┐
+  │  Capa hard: _hard/{vendor}/{family}/{model}/               │
+  │                                                            │
+  │  Estandar: C + extensiones nativas del toolchain target    │
+  │  Headers:  <xc.h>, stm32f1xx.h, <avr/io.h>, etc.         │
+  │  Permite:  SFRs, ISR macros, asm inline, pragmas,          │
+  │            memoria bankeada, __near/__far, PROGMEM          │
+  │                                                            │
+  │  → Solo compila con el toolchain del MCU target            │
+  │  → Las extensiones quedan ENCAPSULADAS: no se filtran      │
+  │    a las capas superiores                                  │
+  └────────────────────────────────────────────────────────────┘
+  ```
+
+  Lo que hace portable al SDK no es exigir un toolchain especifico,
+  sino que las funciones expuestas por `_hard/` tengan **signatures
+  C99 puras**:
+  ```c
+  // Estas signatures son C99 — cualquier compilador las entiende
+  void UART1_init(void);
+  void UART1_sendByte(uint8_t data);
+  uint8_t UART1_readByte(void);
+  uint8_t UART1_dataAvailable(void);
+
+  // Lo que hay DENTRO de estas funciones puede usar cualquier
+  // extension del toolchain (SFRs, ISR vectors, memoria bankeada).
+  // Eso queda encapsulado en _hard/ y no afecta a las capas superiores.
+  ```
+
+- **Tipos de datos**: Todas las capas usan `<stdint.h>` (`uint8_t`,
+  `uint16_t`, etc.) y `<stdbool.h>`. Nunca `unsigned char`, `BYTE`,
+  `WORD` ni tipos propietarios fuera de `_hard/`.
+- **Filosofia EMIC**: El SDK mantiene el modelo **desarrollador → SDK →
+  integrador**. Los desarrolladores escriben C en las capas hard/drivers.
+  Los integradores consumen recursos publicados via el Editor EMIC
+  (programa visual) sin tocar C. EMIC-Codify es el puente.
+
+### M2. Escalabilidad funcional
+
+> **El sistema debe permitir agregar nuevas familias de MCU y nuevas
+> funcionalidades (perifericos, middleware, APIs) sin modificar el
+> codigo existente ni la arquitectura.**
+
+- **Agregar un MCU nuevo**: Crear carpeta
+  `_hard/{vendor}/{family}/{model}/` con `mcu.emic` + `pin_map.emic` +
+  implementaciones de perifericos. Ningun archivo existente se modifica.
+- **Agregar un periferico nuevo**: Crear `_hal/{NOMBRE}/nombre.emic`
+  con su contrato `EMIC:json(type = peripheral)`. Implementar en cada
+  MCU que lo soporte. Ningun contrato existente se modifica.
+- **Agregar un proceso EMIC nuevo**: Definir la macro
+  `system.process.NuevoProceso` e implementar su handler en el motor.
+  Los archivos `.emic` existentes no se ven afectados — solo se agregan
+  secciones `EMIC:ifdef` opcionales.
+- **Patron Open-Closed**: Las entidades del SDK estan abiertas a
+  extension (nueva carpeta, nuevo archivo) pero cerradas a modificacion
+  (los contratos y formatos existentes no cambian).
+
+### M3. AI-first (diseñado para agentes de IA)
+
+> **El SDK esta diseñado primariamente para ser consumido, navegado y
+> operado por agentes de IA. La legibilidad humana es deseable pero
+> secundaria.**
+
+Este mandato tiene implicaciones profundas en el diseño:
+
+- **Archivos auto-descriptivos**: Todo archivo `.emic` del SDK DEBE
+  comenzar con un bloque `EMIC:json` que identifica que es, que contiene
+  y como se relaciona con otros archivos. Un agente que abre un archivo
+  debe poder entenderlo sin contexto externo.
+- **Naming determinista**: Las rutas son predecibles por convencion:
+  - Contrato de periferico → `_hal/{PERIFERICO}/{periferico}.emic`
+  - Descriptor MCU → `_hard/{vendor}/{family}/{model}/mcu.emic`
+  - Pin map → `_hard/{vendor}/{family}/{model}/pins/pin_map.emic`
+  - Implementacion → `_hard/{vendor}/{family}/{model}/{PERIFERICO}/`
+  Un agente puede construir la ruta sin buscar en el filesystem.
+- **Manifest del SDK** (`sdk.manifest.json`): Archivo raiz que el agente
+  lee primero. Lista todos los MCUs, perifericos, procesos y sus rutas.
+  Generado automaticamente por el proceso HardwareInfo.
+- **Schema versionado**: Todo `EMIC:json` incluye un campo
+  `"schema_version"` que permite al agente detectar cambios de formato:
+  ```json
+  EMIC:json(type = mcu)
+  {
+      "schema_version": "1.0",
+      "vendor": "ST",
+      ...
+  }
+  ```
+- **Modelo canonico de queries**: El agente resuelve preguntas con
+  paths JSON deterministas:
+  - "Tiene UART?" → `mcu.peripherals.UART.available`
+  - "Cuantas instancias?" → `mcu.peripherals.UART.instances`
+  - "Que funciones requiere?" → `peripheral.requires.functions[].name`
+  - "Es compatible?" → cruce `peripheral.requires` vs `mcu.peripherals`
+- **Sin ambiguedad**: Los nombres de campos JSON, perifericos, funciones
+  y procesos son constantes documentadas. No hay sinonimos (`UART` nunca
+  se llama `Serial`, `USART`, o `COM`).
+- **Comentarios estructurados**: Donde haya comentarios, usar el
+  formato `// @tag: valor` para que sean parseables:
+  ```
+  // @layer: hard
+  // @peripheral: UART
+  // @implements: UART{port}_init, UART{port}_sendByte
+  ```
+
+### M4. Separacion por capas (portabilidad)
+
+> **Cada capa del SDK tiene responsabilidades y restricciones claras.
+> El codigo de una capa NUNCA accede directamente a la capa que no le
+> corresponde.**
+
+| Capa | Puede acceder a | NO puede acceder a | Estandar C | Contiene |
+|------|-----------------|-------------------|-----------|----------|
+| `_api/` | `_hal/`, `_middleware/`, `_drivers/` | `_hard/` | C99 Freestanding | Logica de alto nivel, recursos publicados |
+| `_drivers/` | `_hal/` | `_hard/`, `_api/` | C99 Freestanding | Control de dispositivos externos |
+| `_middleware/` | `_api/`, `_drivers/` (via funciones) | `_hard/`, `_hal/` | C99 Freestanding | Procesamiento de señales, filtros |
+| `_hal/` | `_hard/` (via routing) | `_api/`, `_drivers/` | N/A (metadata + routing) | Contratos, routing a hard |
+| `_hard/` | Headers del vendor | `_api/`, `_drivers/`, `_hal/` | C + toolchain nativo | SFRs, ISRs, registros |
+| `_pcb/` | `_hard/` (define macros) | Todo lo demas | N/A (macros EMIC) | Asignacion de pines, MCU selection |
+| `_system/` | — | Todo | C99 Freestanding | Utilidades core, conversiones |
+
+**Reglas de dependencia estrictas**:
+
+```
+         _api/  ←──  _middleware/
+           │              │
+           ▼              ▼
+       _drivers/     (funciones pasadas como parametro)
+           │
+           ▼
+         _hal/   ← contratos (EMIC:json)
+           │
+           ▼
+        _hard/   ← implementaciones MCU-especificas
+           │
+       _pcb/     ← configura macros system.uc*
+```
+
+1. Las flechas indican **dependencia permitida** (quien incluye a quien)
+2. `_hard/` NUNCA importa de `_api/` ni `_drivers/`
+3. `_hal/` NUNCA contiene codigo C — solo metadata JSON y routing EMIC
+4. `_middleware/` recibe funciones como parametros, no importa archivos
+   de `_api/` o `_drivers/` directamente
+5. Solo `_hard/` puede usar `#include` de headers vendor (ej: `stm32f1xx.h`)
+6. Las capas portables (`_api/`, `_drivers/`, `_middleware/`, `_system/`)
+   deben compilar con cualquier compilador C99 sin modificaciones
+
+---
+
 ## Indice
 
+0. [Mandatos Fundamentales](#mandatos-fundamentales) — M1, M2, M3, M4
 1. [Estado Actual (referencia)](#1-estado-actual-referencia)
 2. [Problemas y Limitaciones](#2-problemas-y-limitaciones)
 3. [Objetivos del Rediseño](#3-objetivos-del-rediseño)
@@ -21,6 +224,8 @@
 10. [Ejemplos Completos](#10-ejemplos-completos)
 11. [Impacto en Capas Superiores](#11-impacto-en-capas-superiores)
 12. [Plan de Implementacion](#12-plan-de-implementacion)
+13. [SDK Manifest y Navegabilidad AI (M3)](#13-sdk-manifest-y-navegabilidad-ai-m3)
+14. [Guias de Escalabilidad (M2)](#14-guias-de-escalabilidad-m2)
 
 ---
 
@@ -159,7 +364,7 @@ informacion no esta codificada en el SDK.
 | 5 | **Auto-documentacion**: Generar documentacion de capacidades a partir de la metadata del SDK | Media |
 | 6 | **Validacion de compatibilidad**: Verificar en compile-time que las APIs/drivers usados son compatibles con el MCU | Media |
 | 7 | **Gestion de recursos**: Rastrear asignacion de pines, canales, timers para detectar conflictos | Media |
-| 8 | **Toolchain-agnostic**: Separar la abstraccion de periferico del toolchain especifico | Media |
+| 8 | **Toolchain-agnostic**: Capas portables en C99 Freestanding; `_hard/` usa toolchain nativo del MCU sin restricciones (M1) | Alta |
 
 > **Nota**: Este es un SDK nuevo desde cero. No se busca compatibilidad retroactiva
 > con el SDK existente.
@@ -172,37 +377,46 @@ informacion no esta codificada en el SDK.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  API / Driver                                                       │
-│  Consume perifericos via HAL usando funciones del contrato          │
+│  API  (_api/)                                  ANSI C99             │
+│  Consume perifericos via HAL. Publica recursos al integrador.       │
 │  EMIC:setInput(DEV:_hal/UART/UART.emic, port=1, baud=9600)        │
-├─────────────────────────────────────────────────────────────────────┤
+├───────────────────────────┬─────────────────────────────────────────┤
+│  Drivers  (_drivers/)     │  Middleware  (_middleware/)              │
+│  Control de dispositivos  │  Filtros, detectores, colas, conversores│
+│  externos (sensores, etc) │  Recibe funciones como parametros       │
+│  ANSI C99                 │  ANSI C99                               │
+├───────────────────────────┴─────────────────────────────────────────┤
 │  HAL  (_hal/)                              ◄── REDISEÑADA          │
+│  Solo metadata (EMIC:json) + routing (EMIC:setInput).              │
+│  NO contiene codigo C.                                              │
 │                                                                     │
 │  ┌─────────────────────────────────────┐                           │
 │  │ EMIC:json(type = peripheral)        │ ← Contrato del periferico │
-│  │ Define: funciones, parametros,      │                           │
+│  │ Define: funciones, parametros,      │   (schema_version: "1.0") │
 │  │ capacidades, tipos, instancias      │                           │
 │  ├─────────────────────────────────────┤                           │
-│  │ Routing a implementacion hard       │ ← Mantiene patron actual  │
+│  │ Routing (solo en Generate)          │                           │
 │  │ EMIC:setInput(DEV:_hard/...)        │                           │
 │  └─────────────────────────────────────┘                           │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Hard  (_hard/{familia}/{modelo}/)         ◄── REESTRUCTURADA      │
+│  Hard  (_hard/{vendor}/{family}/{model}/)  ◄── REESTRUCTURADA      │
+│  UNICA capa con acceso a SFRs y headers vendor. C + vendor.        │
 │                                                                     │
 │  ┌─────────────────────────────────────┐                           │
 │  │ EMIC:json(type = mcu)              │ ← Descriptor del MCU      │
-│  │ Define: familia, nucleos, memoria,  │                           │
-│  │ perifericos disponibles, pines      │                           │
+│  │ schema_version, vendor, family,     │                           │
+│  │ peripherals, memory, toolchain      │                           │
 │  ├─────────────────────────────────────┤                           │
-│  │ Implementaciones de periferico      │ ← Codigo MCU-especifico   │
-│  │ Cumple contrato definido en HAL     │                           │
+│  │ Implementaciones de periferico      │ ← Cumple contrato HAL    │
+│  │ Usa headers vendor (stm32f1xx.h)    │                           │
 │  ├─────────────────────────────────────┤                           │
 │  │ EMIC:json(type = pin_map)          │ ← Descriptor de pines     │
 │  │ Capacidades de cada pin fisico      │                           │
 │  └─────────────────────────────────────┘                           │
 ├─────────────────────────────────────────────────────────────────────┤
-│  PCB  (_pcb/)                              ← Sin cambios           │
-│  Define system.ucName, asigna pines con nombre logico               │
+│  PCB  (_pcb/)                                                       │
+│  Define system.ucVendor, system.ucFamily, system.ucName             │
+│  Asigna pines con nombre logico                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -578,8 +792,9 @@ hard de un MCU cumple con lo que las APIs esperan.
 EMIC:json(type = peripheral)
 {
     // ──────────────────────────────────────────────
-    // IDENTIFICACION
+    // SCHEMA + IDENTIFICACION (M3: auto-descriptivo)
     // ──────────────────────────────────────────────
+    "schema_version": "1.0",
     "name": "UART",
     "brief": "Universal Asynchronous Receiver-Transmitter",
     "description": "Comunicacion serial asincrona full-duplex con
@@ -766,8 +981,9 @@ Describe completamente las capacidades del microcontrolador:
 EMIC:json(type = mcu)
 {
     // ──────────────────────────────────────────────
-    // IDENTIFICACION
+    // SCHEMA + IDENTIFICACION
     // ──────────────────────────────────────────────
+    "schema_version": "1.0",
     "vendor": "Microchip",
     "family": "PIC24F",
     "model": "pic24FJ128GC006",
@@ -777,10 +993,12 @@ EMIC:json(type = mcu)
     "core": "PIC24",
 
     // ──────────────────────────────────────────────
-    // TOOLCHAIN
+    // TOOLCHAIN (M1: cualquier compilador C99)
     // ──────────────────────────────────────────────
     "toolchain": {
         "compiler": "XC16",
+        "compiler_base": "gcc-fork",
+        "c_standard": "C99",
         "ide": "MPLAB X",
         "header": "<xc.h>",
         "programmer": "PICkit3",
@@ -926,6 +1144,7 @@ generar las macros C automaticamente:
 ```javascript
 EMIC:json(type = pin_map)
 {
+    "schema_version": "1.0",
     "mcu": "pic24FJ128GC006",
     "package": "TQFP-64",
     "total_io_pins": 53,
@@ -1231,6 +1450,7 @@ EMIC:endif
 ```
 EMIC:json(type = mcu)
 {
+    "schema_version": "1.0",
     "vendor": "ST",
     "family": "STM32F1",
     "model": "STM32F103C8",
@@ -1241,6 +1461,8 @@ EMIC:json(type = mcu)
 
     "toolchain": {
         "compiler": "arm-none-eabi-gcc",
+        "compiler_base": "gcc",
+        "c_standard": "C99",
         "ide": "STM32CubeIDE",
         "header": "stm32f1xx.h",
         "programmer": "ST-Link V2",
@@ -1555,3 +1777,170 @@ verificados.
 
 **Resultado**: Sistema completo con validacion pre-compilacion,
 auto-documentacion y asistencia AI.
+
+---
+
+## 13. SDK Manifest y Navegabilidad AI (M3)
+
+### `sdk.manifest.json`
+
+El archivo raiz del SDK es el punto de entrada para cualquier agente de IA.
+Se genera automaticamente al ejecutar el proceso HardwareInfo sobre todo
+el SDK:
+
+```json
+{
+    "schema_version": "1.0",
+    "sdk_name": "EMIC SDK",
+    "generated_at": "2026-02-25T10:00:00Z",
+    "generated_by": "HardwareInfo process",
+
+    "mcus": [
+        {
+            "vendor": "Microchip",
+            "family": "PIC24F",
+            "model": "pic24FJ128GC006",
+            "path": "_hard/Microchip/PIC24F/pic24FJ128GC006/mcu.emic",
+            "pin_map": "_hard/Microchip/PIC24F/pic24FJ128GC006/pins/pin_map.emic",
+            "peripherals": ["GPIO", "UART", "SPI", "I2C", "ADC", "Timer", "Flash", "USB"]
+        },
+        {
+            "vendor": "ST",
+            "family": "STM32F1",
+            "model": "STM32F103C8",
+            "path": "_hard/ST/STM32F1/STM32F103C8/mcu.emic",
+            "pin_map": "_hard/ST/STM32F1/STM32F103C8/pins/pin_map.emic",
+            "peripherals": ["GPIO", "UART", "SPI", "I2C", "ADC", "Timer", "PWM", "USB", "CAN", "DMA"]
+        }
+    ],
+
+    "peripherals": [
+        {
+            "name": "UART",
+            "category": "Communication",
+            "contract": "_hal/UART/UART.emic",
+            "implementations": [
+                "_hard/Microchip/PIC24F/pic24FJ128GC006/UART/",
+                "_hard/ST/STM32F1/STM32F103C8/UART/"
+            ]
+        },
+        {
+            "name": "GPIO",
+            "category": "Digital",
+            "contract": "_hal/GPIO/gpio.emic",
+            "implementations": ["..."]
+        }
+    ],
+
+    "processes": ["Discovery", "HardwareInfo", "Validation", "Generate", "PinInfo"],
+
+    "layers": {
+        "_api":        {"standard": "C99 Freestanding", "can_access": ["_hal", "_middleware", "_drivers"]},
+        "_drivers":    {"standard": "C99 Freestanding", "can_access": ["_hal"]},
+        "_middleware":  {"standard": "C99 Freestanding", "can_access": ["(functions as params)"]},
+        "_hal":        {"standard": "N/A (metadata)", "can_access": ["_hard"]},
+        "_hard":       {"standard": "C + toolchain nativo", "can_access": ["vendor headers"]},
+        "_pcb":        {"standard": "N/A (macros EMIC)", "can_access": ["_hard"]},
+        "_system":     {"standard": "C99 Freestanding", "can_access": []}
+    }
+}
+```
+
+### Patron de navegacion para agentes AI
+
+Un agente que necesita responder una pregunta sobre el SDK sigue este
+flujo determinista:
+
+```
+1. Leer sdk.manifest.json                    → Mapa completo del SDK
+2. Filtrar MCU por vendor/family/model        → Path al mcu.emic
+3. Leer mcu.emic                              → Capacidades del MCU
+4. Si necesita contrato de periferico:
+   Construir ruta: _hal/{PERIFERICO}/{periferico}.emic
+5. Si necesita implementacion:
+   Construir ruta: _hard/{vendor}/{family}/{model}/{PERIFERICO}/
+6. Si necesita pines:
+   Construir ruta: _hard/{vendor}/{family}/{model}/pins/pin_map.emic
+```
+
+No se requiere busqueda en filesystem. Todas las rutas son predecibles
+por convencion o estan listadas en el manifest.
+
+---
+
+## 14. Guias de Escalabilidad (M2)
+
+### 14.1. Como agregar un nuevo MCU
+
+**Prerequisito**: El toolchain del MCU debe soportar C99 (M1).
+
+```
+1. Crear directorio:
+   _hard/{Vendor}/{Family}/{Model}/
+
+2. Crear descriptor MCU:
+   _hard/{Vendor}/{Family}/{Model}/mcu.emic
+   → EMIC:json(type = mcu) con schema_version, vendor, family, model,
+     toolchain, memory, clock, peripherals
+
+3. Crear pin map:
+   _hard/{Vendor}/{Family}/{Model}/pins/pin_map.emic
+   → EMIC:json(type = pin_map) con todos los pines y capacidades
+
+4. Por cada periferico soportado, crear:
+   _hard/{Vendor}/{Family}/{Model}/{PERIFERICO}/
+   ├── periferico.emic     (orquestador: EMIC:copy + EMIC:define)
+   ├── inc/periferico.h    (prototipos + registros vendor)
+   └── src/periferico.c    (implementacion con SFRs)
+
+5. Verificar cumplimiento de contratos:
+   - Cada funcion listada en _hal/{PERIFERICO}/{periferico}.emic
+     "requires.functions" DEBE existir en la implementacion
+   - Las signatures deben coincidir exactamente
+
+6. Ejecutar proceso HardwareInfo para regenerar sdk.manifest.json
+
+7. NO modificar ningun archivo fuera de _hard/{Vendor}/{Family}/{Model}/
+```
+
+### 14.2. Como agregar un nuevo periferico (contrato HAL)
+
+```
+1. Crear contrato:
+   _hal/{NOMBRE}/{nombre}.emic
+   → EMIC:json(type = peripheral) con schema_version, name, category,
+     parameters, requires (funciones obligatorias), optional, dependencies
+
+2. Agregar routing condicional:
+   EMIC:ifdef system.process.Generate
+       EMIC:setInput(DEV:_hard/.{system.ucVendor}./.{system.ucFamily}./.{system.ucName}./{NOMBRE}/{nombre}.emic, ...)
+   EMIC:endif
+
+3. Implementar en al menos un MCU:
+   _hard/{vendor}/{family}/{model}/{NOMBRE}/
+
+4. Actualizar mcu.emic de los MCUs que lo soportan:
+   Agregar entrada en "peripherals": { "{NOMBRE}": { "available": true, ... } }
+
+5. NO modificar contratos de otros perifericos
+```
+
+### 14.3. Como agregar un nuevo proceso EMIC
+
+```
+1. Elegir nombre: system.process.{NombreProceso}
+
+2. Implementar handler en el motor de parseo:
+   - Definir automaticamente la macro system.process.{NombreProceso}
+   - Definir que archivos parsea (entrada)
+   - Definir que extrae (salida: JSON, reportes, etc.)
+
+3. Agregar secciones EMIC:ifdef opcionales en archivos existentes:
+   EMIC:ifdef system.process.{NombreProceso}
+       EMIC:json(type = ...)
+       { ... metadata especifica del proceso ... }
+   EMIC:endif
+
+4. NO es necesario modificar archivos que no participan del nuevo proceso
+   (las secciones ifdef son opcionales y no afectan otros procesos)
+```
