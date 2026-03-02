@@ -7,7 +7,6 @@
 > **Documento complementario de**: `EMIC_HAL_Hard_Redesign_Proposal.md`
 > (que define la arquitectura general HAL+Hard y los Mandatos M1-M4).
 >
-> **Basado en**: `EMIC_API_Reference.md` (referencia operativa para el DevAgent).
 
 ---
 
