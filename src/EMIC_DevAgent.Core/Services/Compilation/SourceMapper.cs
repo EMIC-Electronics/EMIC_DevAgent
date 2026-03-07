@@ -11,10 +11,12 @@ namespace EMIC_DevAgent.Core.Services.Compilation;
 /// </summary>
 public class SourceMapper
 {
+    private readonly MediaAccess _mediaAccess;
     private readonly ILogger<SourceMapper> _logger;
 
-    public SourceMapper(ILogger<SourceMapper> logger)
+    public SourceMapper(MediaAccess mediaAccess, ILogger<SourceMapper> logger)
     {
+        _mediaAccess = mediaAccess;
         _logger = logger;
     }
 
@@ -93,7 +95,7 @@ public class SourceMapper
                     f.RelativePath.Equals(sourceFile, StringComparison.OrdinalIgnoreCase) ||
                     sourceFile.EndsWith(f.RelativePath, StringComparison.OrdinalIgnoreCase) ||
                     f.RelativePath.EndsWith(sourceFile, StringComparison.OrdinalIgnoreCase) ||
-                    Path.GetFileName(f.RelativePath).Equals(Path.GetFileName(sourceFile), StringComparison.OrdinalIgnoreCase));
+                    _mediaAccess.Path.GetFileName(f.RelativePath).Equals(_mediaAccess.Path.GetFileName(sourceFile), StringComparison.OrdinalIgnoreCase));
 
                 if (matchedFile != null)
                 {
@@ -116,12 +118,12 @@ public class SourceMapper
         }
 
         // Strategy 2: Fallback to filename matching
-        var errorFileName = Path.GetFileName(error.FilePath);
+        var errorFileName = _mediaAccess.Path.GetFileName(error.FilePath);
         if (!string.IsNullOrEmpty(errorFileName))
         {
             var fileByName = generatedFiles.FirstOrDefault(f =>
                 (f.Type == FileType.Source || f.Type == FileType.Header) &&
-                Path.GetFileName(f.RelativePath).Equals(errorFileName, StringComparison.OrdinalIgnoreCase));
+                _mediaAccess.Path.GetFileName(f.RelativePath).Equals(errorFileName, StringComparison.OrdinalIgnoreCase));
 
             if (fileByName != null)
             {

@@ -14,12 +14,9 @@ public class SdkPathResolver
         _mediaAccess = mediaAccess;
     }
 
-    public string GetApiPath() => Path.Combine(_paths.SdkRoot, "_api");
-    public string GetDriversPath() => Path.Combine(_paths.SdkRoot, "_drivers");
-    public string GetModulesPath() => Path.Combine(_paths.SdkRoot, "_modules");
-    public string GetHalPath() => Path.Combine(_paths.SdkRoot, "_hal");
-    public string GetMainPath() => Path.Combine(_paths.SdkRoot, "_main");
-
-    public string ResolveVolume(string emicPath)
-        => _mediaAccess.EmicPath(emicPath);
+    public string GetApiPath() => _mediaAccess.Path.Combine(_paths.SdkRoot, "_api");
+    public string GetDriversPath() => _mediaAccess.Path.Combine(_paths.SdkRoot, "_drivers");
+    public string GetModulesPath() => _mediaAccess.Path.Combine(_paths.SdkRoot, "_modules");
+    public string GetHalPath() => _mediaAccess.Path.Combine(_paths.SdkRoot, "_hal");
+    public string GetMainPath() => _mediaAccess.Path.Combine(_paths.SdkRoot, "_main");
 }

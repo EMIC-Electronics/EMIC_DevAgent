@@ -78,12 +78,10 @@ public class MaterializerAgent : AgentBase
 
         try
         {
-            var sdkPhysical = _mediaAccess.EmicPath("DEV:");
-            var treeDrivers = new Dictionary<string, string>
+            var treeDrivers = new Dictionary<string, string>(_mediaAccess.VirtualDrivers)
             {
-                ["DEV"] = sdkPhysical,
-                ["SYS"] = $"{sdkPhysical}/{modulePath}/System",
-                ["TARGET"] = $"{sdkPhysical}/{modulePath}/Target"
+                ["SYS"] = $"DEV:/{modulePath}/System",
+                ["TARGET"] = $"DEV:/{modulePath}/Target"
             };
 
             var treeMA = new MediaAccess(_session.UserEmail, treeDrivers);

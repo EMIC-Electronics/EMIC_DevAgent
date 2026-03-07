@@ -37,7 +37,7 @@ public static class ServiceCollectionExtensions
         // Singleton services (stateless)
         services.AddTransient<LlmPromptBuilder>();
         services.AddSingleton<CompilationErrorParser>();
-        services.AddSingleton<SourceMapper>();
+        services.AddScoped<SourceMapper>();
 
         // MediaAccess (scoped, needs IAgentSession for user context)
         services.AddScoped<MediaAccess>(sp =>
