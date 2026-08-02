@@ -826,7 +826,7 @@ multiple, compilacion condicional de poll por evento, modos de operacion.
 
 **timer_api.emic:**
 ```
-EMIC:tag(driverName = TIMER)
+EMIC:tag(driverName = TIME)
 
 /**
 * @fn void setTime.{name}.(uint16_t time, char mode);
